@@ -4,28 +4,50 @@ Riscos observados no código real (com caminho/arquivo como evidência), prioriz
 
 ## Alto impacto
 
-### C-01: Schema SQLite não tem versionamento — alterar coluna existente não migra
+### C-01: ~~Schema SQLite não tem versionamento — alterar coluna existente não migra~~ — **RESOLVIDO POR IMPLEMENTAÇÃO (2026-07-25, M3.1)**
 
-**Evidência:** `src-tauri/src/db.rs` — `const SCHEMA` é só uma sequência de `CREATE TABLE IF NOT EXISTS` / `CREATE INDEX IF NOT EXISTS`, executada em todo `db::open()`.
-**Risco:** funciona perfeitamente pra **adicionar tabela nova** (foi o caso do M3), mas se alguma feature futura precisar adicionar/renomear/remover **coluna de tabela existente**, o `IF NOT EXISTS` faz o comando virar no-op silencioso em qualquer banco já criado. O usuário fica com schema antigo e erro de runtime em `row.get(N)`, sem nenhum aviso.
-**Quando dói:** o M7 (`embedded-runtime`) e a mudança de "conexão única ativa" já mexem em `connections` — este é o momento natural de resolver.
-**Fix sugerido:** adicionar `PRAGMA user_version` + um vetor de migrações aplicadas em ordem (`migrations: &[(u32, &str)]`), rodando só as acima da versão atual. ~40 linhas, sem dependência nova.
+O fix sugerido aqui foi executado quase literalmente: `PRAGMA user_version` + `const MIGRATIONS: &[(u32, &str)]` aplicadas em ordem, cada uma em transação, rodando só as acima da versão atual (`src-tauri/src/db.rs`). A lista está hoje na **migração 8** (`MIGRATION_8_CHAT_MEMORY`), o que significa que sete mudanças de schema já atravessaram bancos existentes desde então — inclusive as destrutivas da 7, que derrubou `connections` e `model_configs`.
+
+**Encontrado na auditoria de 2026-07-27** (run 001 da skill `spec-loop`): este item continuava listado em "Alto impacto", sem tachado, descrevendo o `db.rs` como "só uma sequência de `CREATE TABLE IF NOT EXISTS`" — enquanto o `ROADMAP.md` do M3.1 já dizia, desde 2026-07-25, *"resolve C-01 do CONCERNS.md"*. Os dois documentos se contradiziam havia dois dias.
+
+**O risco trocou de forma, não desapareceu.** Ele agora mora no **número** da migração: duas entradas com o mesmo `u32` não quebram a compilação e não disparam teste — a segunda simplesmente nunca roda, porque o `user_version` já passou dela. O banco de quem escreve a migração, criado do zero, fica correto; o do usuário, que migra, fica sem a coluna. Por isso o `AGENTS.md` manda conferir o número na lista `MIGRATIONS` em vez de confiar na prosa.
 
 ### C-02: ~~`list_connections` faz health checks sequenciais de 5s — trava a UI~~ — **RESOLVIDO POR REMOÇÃO (2026-07-27, M9)**
 
 Não existe mais lista de conexões para checar. O `runtime_status` lê uma linha de banco e consulta o estado do processo filho em memória; nenhum health check HTTP acontece ao abrir a sidebar. `list_connections`, `ConnectionManager` e os três clients com timeout de 5s foram apagados na AD-042.
 
-### C-03: `src/types.ts` espelha as structs Rust manualmente, sem geração
+### C-03: ~~`src/types.ts` espelha as structs Rust manualmente, sem geração~~ — **RESOLVIDO POR IMPLEMENTAÇÃO (2026-07-28, feature `generated-types`)**
 
-**Evidência:** `src/types.ts` replica à mão structs de `providers/mod.rs`, `runtime/store.rs`, `models/catalog.rs` e `runtime_commands.rs`. O M9 **reduziu** a superfície — `Connection`, `ConnectionProvider`, `ConnectionStatus`, `ActivePair` e `ConfigApplied` deixaram de existir dos dois lados —, mas não resolveu o problema. O caso mais frágil é `DownloadableModel`: no Rust é `struct DownloadableModel { #[serde(flatten)] info: CuratedModelInfo, fits_ram: bool }`, e no TS é uma interface **plana** com todos os campos — a correspondência só existe por causa do `flatten`.
-**Risco:** renomear um campo no Rust compila normalmente e o TS também compila; a quebra só aparece em runtime, como `undefined` na tela. Nenhum teste pega isso hoje (ver C-04).
-**Fix sugerido:** adotar `ts-rs` ou `specta`/`tauri-specta` pra gerar `types.ts` a partir das structs. Vale a pena quando o número de tipos crescer mais (hoje são 8; dobrar isso torna o manual insustentável).
+**Como era:** `src/types.ts` replicava à mão structs de `providers/mod.rs`, `runtime/store.rs`, `models/catalog.rs` e `runtime_commands.rs` — 29 declarações escritas por pessoa. O caso mais frágil era `DownloadableModel`: no Rust `{ #[serde(flatten)] info: CuratedModelInfo, fits_ram: bool }`, no TS uma interface **plana** — a correspondência existia só por causa do `flatten`, e nada a verificava. Renomear um campo no Rust compilava dos dois lados; a quebra só aparecia em runtime, como `undefined` na tela.
 
-### C-04: Zero cobertura de teste no frontend
+**Como está:** `ts-rs = "12"` com `#[derive(TS)]` em **30 declarações**, geradas por `src-tauri/src/types_export.rs`. O `src/types.ts` traz cabeçalho `GENERATED FILE — do not edit by hand` e o comando de regeneração. O gate é o teste `types_export::tests::types_ts_matches_rust_structs`, que compara bytes e falha quando o Rust anda sem o TS acompanhar.
 
-**Evidência:** `package.json` não tem Vitest, Jest, Testing Library nem script `test`. `.specs/codebase/TESTING.md` já registra isso como "none (por ora)".
-**Risco:** 12 componentes React e 4 stores Zustand, incluindo lógica não-trivial sem teste nenhum: o filtro `fits_ram` + toggle "mostrar todos" (`ModelsList.tsx`), o cálculo de percentual de download (`ModelDownloadCard.tsx`), o listener de evento que indexa progresso pela URL do `.gguf` (`runtimeStore.ts`) e, desde o M6, o listener de `memory-backfill-progress` que descarta eventos de outra conversa (`chatStore.ts`).
-**Fix sugerido:** Vitest + RTL cobrindo primeiro os stores (lógica pura, sem DOM) — é onde está o maior risco por menor esforço.
+**A evidência é a mutação, não a contagem** — e foi feita duas vezes, por agentes diferentes:
+
+1. O implementador renomeou `estimated_ram_gb` → `estimated_ram_gigabytes` em `models/catalog.rs`.
+2. O orquestrador, independentemente, estreitou `Message.role` de `"user"|"assistant"|"system"` para `"user"|"assistant"` — uma mudança **puramente de atributo TS**, que não altera uma linha de Rust executável.
+
+Nos dois casos **`cargo check --lib` termina limpo em ~2,5 s e `npm run build` também** — ou seja, os dois compiladores ficam calados diante da divergência, que é exatamente o risco que este item descrevia. O único a falar foi o gate:
+
+```
+first differing line (24):
+  committed:  export type Message = { …, role: "user" | "assistant" | "system", … };
+  generated:  export type Message = { …, role: "user" | "assistant", … };
+```
+
+Verde de volta após reverter: `181 passed; 0 failed; 16 ignored`.
+
+**O que este item NÃO resolveu, e é honesto separar:** o gate garante que o `types.ts` corresponde às structs Rust. Ele **não** garante que a UI trate todos os valores da união. O `ChatAttachment.status` ficou mais largo depois da geração (`DocumentStatus | "injected_whole"`) e os dois usos no frontend são `=== "error"` / `!== "error"`, que compilam contra qualquer união — está registrado como todo no `STATE.md`.
+
+### C-04: ~~Zero cobertura de teste no frontend~~ — **RESOLVIDO POR IMPLEMENTAÇÃO (2026-07-28, feature `frontend-testing`)**
+
+**Como era:** `package.json` sem Vitest, Jest, Testing Library nem script `test`. **19 componentes React e 6 stores Zustand** (contados em 2026-07-27; eram 12 e 4 quando este item foi escrito) sem teste nenhum, incluindo as quatro lógicas que este item nomeava: o filtro `fits_ram` + toggle "mostrar todos" (`ModelsList.tsx`), o cálculo de percentual de download (`ModelDownloadCard.tsx`), o listener que indexa progresso pela URL do `.gguf` (`runtimeStore.ts`) e o listener de `memory-backfill-progress` que descarta eventos de outra conversa (`chatStore.ts`).
+
+**Como está:** `npm test` → **8 arquivos, 63 testes passando, 2,89 s** (remedido pelo orquestrador em 2026-07-28, independente do agente que implementou). Vitest + jsdom + RTL, com `invoke`/`listen` interceptados por `test.alias`. **As quatro lógicas nomeadas acima estão cobertas**, e cada uma foi provada por mutação: quebrar a lógica de propósito derruba testes (12 mutações, 12 reprovações — a tabela está em `.specs/features/frontend-testing/tasks.md`). Um teste que continua verde com o código desligado não prova nada, e é por isso que a evidência aqui é a mutação e não a contagem.
+
+**O que a cobertura já pagou:** um defeito real de produção que ninguém tinha visto — `sendMessage` grava o erro no `catch` e o `finally` chama `loadChats()`, que abre com `set({ error: null })`. Uma falha de envio fica visível por um tick e some antes de o React pintar: o usuário vê silêncio. Está fixado como teste de caracterização, escrito sobre a **sequência** de valores de `error`, para que consertar o store faça o teste falhar em vez de continuar verde. **Não foi corrigido** — o conserto muda comportamento de produção da `chat-messaging` e merece decisão própria.
+
+**O que continua aberto** (não é mais C-04, é escopo novo): os **17 outros componentes** seguem sem teste — a feature cobriu os 2 que este item nomeava, os 5 stores e o `theme`. E `npm test` **não** está ligado ao `.github/workflows/ci.yml`, então a suíte só roda quando alguém a chama; o `- [ ]` está no `TESTING.md`.
 
 ## Médio impacto
 

@@ -8,7 +8,7 @@
 
 ## Problem Statement
 
-O LocalMind foi desenhado para falar com três runtimes (Ollama, LM Studio e o embutido) mais uma URL manual, e paga por isso todos os dias: quatro implementações de `ProviderClient`, uma tabela `connections` cuja única função é responder "qual deles atende?", uma tela inteira de Conexões, e um modelo mental que o usuário precisa aprender antes de conversar. Na prática, o runtime embutido já resolve o caso inteiro — foi ele que o app usou em toda verificação real (AD-024, AD-028, AD-033).
+O ReadMe foi desenhado para falar com três runtimes (Ollama, LM Studio e o embutido) mais uma URL manual, e paga por isso todos os dias: quatro implementações de `ProviderClient`, uma tabela `connections` cuja única função é responder "qual deles atende?", uma tela inteira de Conexões, e um modelo mental que o usuário precisa aprender antes de conversar. Na prática, o runtime embutido já resolve o caso inteiro — foi ele que o app usou em toda verificação real (AD-024, AD-028, AD-033).
 
 Ao mesmo tempo, o app se anuncia como offline-first mas não roda sem internet na primeira vez: baixa o `llama-server`, o ONNX Runtime e o pdfium sob demanda. Numa máquina sem rede — ou atrás de um proxy corporativo que bloqueia o GitHub — a instalação simplesmente não conclui.
 
@@ -32,7 +32,7 @@ Explicitamente excluído. Documentado para impedir crescimento de escopo.
 | Voltar Ollama/LM Studio atrás de uma flag ou modo avançado | Decisão D1 — sai inteiro, sem resíduo. Se voltar, volta como feature nova |
 | Suporte a CUDA/ROCm | AD-022 segue valendo: Vulkan cobre NVIDIA/AMD/Intel com um binário só |
 | macOS | Segue fora do escopo do projeto (PROJECT.md) |
-| Atualizar o llama.cpp sem uma release do LocalMind | Consequência aceita de D2 — a versão passa a ser fixada em build |
+| Atualizar o llama.cpp sem uma release do ReadMe | Consequência aceita de D2 — a versão passa a ser fixada em build |
 | Migrar chats/documentos de um provedor externo para o embutido | Não há o que migrar: conversas e documentos nunca foram atrelados a um provedor |
 
 ---
@@ -71,7 +71,7 @@ Explicitamente excluído. Documentado para impedir crescimento de escopo.
 4. WHEN o modelo ativo é trocado ou configurado THEN o sistema SHALL gravar em `embedded_runtime` e em nenhum outro lugar
 5. WHEN o app reinicia THEN o sistema SHALL retomar o mesmo modelo, contexto e escolha de GPU da sessão anterior
 
-**Independent Test:** copiar um `localmind.db` com conexões Ollama, abrir o app, confirmar que os chats continuam lá e que o runtime embutido responde.
+**Independent Test:** copiar um `readme.db` com conexões Ollama, abrir o app, confirmar que os chats continuam lá e que o runtime embutido responde.
 
 ---
 
@@ -129,7 +129,7 @@ Explicitamente excluído. Documentado para impedir crescimento de escopo.
 
 ### P3: Faxina dos downloads antigos
 
-**User Story:** Como usuário que já usava o LocalMind, quero que os ~150 MB baixados pela versão anterior sumam sozinhos, para não guardar arquivos que nada mais lê.
+**User Story:** Como usuário que já usava o ReadMe, quero que os ~150 MB baixados pela versão anterior sumam sozinhos, para não guardar arquivos que nada mais lê.
 
 **Why P3:** É higiene, não funcionalidade — o app funciona igual com o lixo lá.
 

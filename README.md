@@ -1,4 +1,4 @@
-# LocalMind
+# ReadMe
 
 Um chat de IA que roda inteiro na sua máquina, com os seus documentos como base de conhecimento.
 
@@ -10,7 +10,7 @@ Sem conta, sem servidor, sem assinatura. As conversas ficam num banco SQLite na 
 
 Conversar com uma IA sobre documentos próprios hoje custa uma de duas coisas: mandar os arquivos para a nuvem, ou montar um pipeline de RAG na mão — servidor de modelo, banco vetorial, extrator de PDF, gerador de embeddings, cada um com sua instalação e sua versão.
 
-O LocalMind entrega isso pronto num instalador. Você abre, escolhe onde guardar seus dados, e conversa.
+O ReadMe entrega isso pronto num instalador. Você abre, escolhe onde guardar seus dados, e conversa.
 
 ## O que ele faz
 
@@ -43,7 +43,7 @@ Feito isso, o app funciona sem internet.
 
 ## Baixar
 
-Na [página de Releases](https://github.com/rafaelsene01/local-mind/releases) há uma opção para cada caso:
+Na [página de Releases](https://github.com/rafaelsene01/read-me/releases) há uma opção para cada caso:
 
 | Arquivo | Para quem |
 | --- | --- |
@@ -74,3 +74,5 @@ Ainda não existe: macOS.
 O projeto é desenvolvido por specs: cada funcionalidade tem requisitos rastreáveis, decisões registradas com o motivo, e o que foi verificado de verdade separado do que só compilou. Tudo isso está em [`.specs/`](.specs/project/PROJECT.md) — começando pela visão e pelo [roadmap](.specs/project/ROADMAP.md), com o histórico de decisões em [STATE.md](.specs/project/STATE.md).
 
 O processo de publicação de uma versão está em [docs/RELEASING.md](docs/RELEASING.md).
+
+Para compilar do zero, o `lancedb` (banco vetorial) exige o compilador **protoc** instalado — sem ele o `cargo build` falha com *"Could not find `protoc`"*. Windows: `winget install Google.Protobuf`. Linux: `apt install protobuf-compiler`.

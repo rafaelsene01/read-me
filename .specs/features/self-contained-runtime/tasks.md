@@ -24,7 +24,7 @@ cortada de um commit anterior ao vendoring: `git ls-tree v0.2.0 scripts/` não
 tem `vendor-runtime.mjs` nem `vendor.json`, o `tauri.conf.json` da tag não tem
 `bundle.resources`, `runtime/bundled.rs` não existe e o frontend ainda é
 `src/components/Connections`. É por isso que o zip portátil publicado tem
-**3 arquivos** (`.portable`, `LocalMind.exe`, `README.txt`) e nenhum recurso — o
+**3 arquivos** (`.portable`, `ReadMe.exe`, `README.txt`) e nenhum recurso — o
 que é coerente com o código daquela tag, não um defeito do empacotador. Pior:
 naquela tag o backend já tinha perdido `list_connections`/`get_active_pair`/
 `pull_model` (Fase 1, AD-042) enquanto o frontend ainda os chamava, então
@@ -91,20 +91,20 @@ decisão do mantenedor.
 
 | Artefato | Agora | Antes (inservível) | Δ |
 | --- | --- | --- | --- |
-| `LocalMind_0.1.1_x64-setup.exe` (NSIS) | **53,3 MiB** | 47,6 MiB | +5,7 |
-| `LocalMind_0.1.1_x64_en-US.msi` | **91,4 MiB** | 83,8 MiB | +7,6 |
-| `LocalMind_0.1.1_x64-portable.zip` | **107,2 MiB** | 92,0 MiB | +15,2 |
-| `LocalMind.exe` | **159,2 MiB** | 159,2 MiB | 0 |
+| `ReadMe_0.1.1_x64-setup.exe` (NSIS) | **53,3 MiB** | 47,6 MiB | +5,7 |
+| `ReadMe_0.1.1_x64_en-US.msi` | **91,4 MiB** | 83,8 MiB | +7,6 |
+| `ReadMe_0.1.1_x64-portable.zip` | **107,2 MiB** | 92,0 MiB | +15,2 |
+| `ReadMe.exe` | **159,2 MiB** | 159,2 MiB | 0 |
 | `resources/` em `target/release/` | **150 MB, 83 arquivos** | 115,0 MiB, 79 arquivos | +4 arquivos |
 
 **Os +4 arquivos são a prova aritmética da correção:** `llama-server-impl.dll` e
-`llama-common.dll`, uma vez para cada backend (Vulkan e CPU). O `LocalMind.exe`
+`llama-common.dll`, uma vez para cada backend (Vulkan e CPU). O `ReadMe.exe`
 não mudou um byte, o que confirma que o crescimento está inteiro nos recursos e
 não no binário.
 
 **Desta vez o bundle foi executado, não só inspecionado.** É a diferença que a
 AD-046 cobrou do SELF-16: o zip portátil foi extraído numa pasta limpa
-(86 arquivos, `.portable`, `README.txt`, `LocalMind.exe`) e o `llama-server.exe`
+(86 arquivos, `.portable`, `README.txt`, `ReadMe.exe`) e o `llama-server.exe`
 **de dentro dele** foi rodado:
 
 ```
@@ -620,7 +620,7 @@ T5,T11,T17 → T21
 
 **Done when:**
 
-- [ ] O zip contém `LocalMind.exe`, `.portable`, `README.txt` **e** a árvore de recursos
+- [ ] O zip contém `ReadMe.exe`, `.portable`, `README.txt` **e** a árvore de recursos
 - [ ] Recursos ausentes no diretório de build falham o script com mensagem explícita (não geram um zip mudo e quebrado)
 - [ ] Gate check passa: `npm run test:scripts`
 - [ ] Contagem de testes: os atuais + no mínimo 2 novos (recursos copiados, ausência falha)
@@ -669,12 +669,12 @@ T5,T11,T17 → T21
 - [ ] `PROJECT.md` (visão, goals, stack, escopo) não cita Ollama, LM Studio nem "detecção automática"
 - [ ] O diagrama de arquitetura do ROADMAP mostra um runtime só
 - [ ] `INTEGRATIONS.md` deixa de listar integrações que não existem mais; `CONCERNS.md` marca o C-05 como resolvido por remoção
-- [ ] `README.md` descreve a instalação real (nada a instalar além do LocalMind; um modelo a baixar)
+- [ ] `README.md` descreve a instalação real (nada a instalar além do ReadMe; um modelo a baixar)
 - [ ] `grep -ri "ollama\|lmstudio\|lm studio" README.md .specs/project .specs/codebase` só retorna menções históricas datadas
 - [ ] Gate check: revisão manual (documentação não tem gate automatizado)
 
 **Tests:** none · **Gate:** none
-**Commit:** `docs: describe LocalMind as a single self-contained runtime`
+**Commit:** `docs: describe ReadMe as a single self-contained runtime`
 
 ---
 
@@ -694,8 +694,8 @@ T5,T11,T17 → T21
 - [ ] Com a rede desligada e um `.gguf` copiado à mão: instalar → abrir → escolher o modelo → conversar
 - [ ] Com a rede desligada: importar um PDF e vê-lo chegar a `ready`; perguntar sobre ele e receber citação
 - [ ] Com rede: baixar um modelo do catálogo e conversar, sem nenhuma outra etapa de download
-- [x] ⚠️ Bundle portátil extraído em pasta de usuário ~~sobe e conversa~~ — **meio feito**: extraído no scratchpad e o `llama-server.exe` de dentro dele executado (exit 0, Vulkan achando a RTX 3060). **O `LocalMind.exe` do bundle não foi aberto e ninguém conversou** — essa metade continua exigindo uma pessoa
-- [x] Gate check passa: `cargo test` **174 passando / 0 falhas / 12 ignorados** (T17 tinha 150), `npm run test:scripts` **44**, `npm run build` limpo
+- [x] ⚠️ Bundle portátil extraído em pasta de usuário ~~sobe e conversa~~ — **meio feito**: extraído no scratchpad e o `llama-server.exe` de dentro dele executado (exit 0, Vulkan achando a RTX 3060). **O `ReadMe.exe` do bundle não foi aberto e ninguém conversou** — essa metade continua exigindo uma pessoa
+- [x] Gate check passa: `cargo test` **174 passando / 0 falhas / 12 ignorados** (T17 tinha 150), `npm run test:scripts` **44**, `npm run build` limpo — *números da medição de 2026-07-27 que fechou esta task; **hoje a suíte está em 177 / 0 / 15 e os scripts em 49** (run 001). Registro histórico preservado de propósito: ele diz o que era verdade quando a task passou, e não serve como baseline atual*
 
 **Tests:** none (UAT) · **Gate:** full
 **Commit:** —

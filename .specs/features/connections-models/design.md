@@ -114,7 +114,7 @@ graph TD
 
 ## Data Models
 
-### SQLite — novas tabelas (mesma `localmind.db` de M1/M2)
+### SQLite — novas tabelas (mesma `readme.db` de M1/M2)
 
 ```sql
 CREATE TABLE connections (

@@ -87,7 +87,7 @@ Fechar o handle do job é exatamente o que acontece com os handles de um process
 **Sobrou uma coisa só:** olhar a barra de tarefas. O teste `the_flag_is_what_decides_whether_a_console_appears` afirma que o processo com a flag não tem janela de console visível, mas **imprime `INCONCLUSIVO`** quando rodado de um terminal: o processo sem a flag empresta o console do runner em vez de criar um visível, então os dois lados dão `false` e a comparação não prova nada. O bug só reproduz a partir de um pai **sem** console — que é o app. Por isso:
 
 ```powershell
-# Com o app aberto e a conexão embutida ativa: a barra de tarefas mostra só o LocalMind.
+# Com o app aberto e a conexão embutida ativa: a barra de tarefas mostra só o ReadMe.
 ```
 
 ### Por que o app não serviu para o teste
@@ -271,7 +271,7 @@ Fase 4 — Verificação real (a que importa)
 **Done when**:
 - [ ] Abrir o app: **uma** janela na barra de tarefas, nenhum console
 - [ ] Trocar de modelo (reinicia o sidecar): nada pisca
-- [ ] `taskkill /F /IM LocalMind.exe` → `tasklist | findstr llama-server` **não devolve nada**
+- [ ] `taskkill /F /IM ReadMe.exe` → `tasklist | findstr llama-server` **não devolve nada**
 - [ ] Repetir o ciclo abrir/trocar modelo/fechar 3 vezes: nenhum processo acumulado
 - [ ] A detecção de GPU continua achando a RTX 3060 (não caiu para CPU)
 - [ ] O log tem as linhas de carregamento do modelo

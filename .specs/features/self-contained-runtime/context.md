@@ -37,7 +37,7 @@ Hoje o app baixa três coisas da internet no primeiro uso:
 Passam todos a viajar dentro do instalador. Consequências aceitas:
 - Instalador cresce (~120–200 MB por SO, a **medir** depois do primeiro build).
 - O CI passa a baixar e empacotar esses artefatos em toda release.
-- Atualizar a versão do llama.cpp/ONNX/pdfium passa a exigir uma release nova do LocalMind — deixa de ser "o app pega a última".
+- Atualizar a versão do llama.cpp/ONNX/pdfium passa a exigir uma release nova do ReadMe — deixa de ser "o app pega a última".
 - Em troca: **zero download de componente**, inclusive numa máquina sem internet nenhuma.
 
 ---

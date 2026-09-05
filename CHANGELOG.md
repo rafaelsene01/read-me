@@ -8,7 +8,7 @@ e o versionamento segue [SemVer](https://semver.org/lang/pt-BR/).
 
 ### Outros
 
-- Atualiza o README.md para refletir mudanças na descrição do LocalMind, destacando a operação local do chat de IA, a base de conhecimento, e a privacidade dos dados. Remove seções obsoletas e reorganiza informações sobre pré-requisitos e funcionalidades, enfatizando a experiência do usuário e a simplicidade de uso do instalador.
+- Atualiza o README.md para refletir mudanças na descrição do ReadMe, destacando a operação local do chat de IA, a base de conhecimento, e a privacidade dos dados. Remove seções obsoletas e reorganiza informações sobre pré-requisitos e funcionalidades, enfatizando a experiência do usuário e a simplicidade de uso do instalador.
 
 ## [0.1.1] - 2026-07-26
 

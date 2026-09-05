@@ -68,7 +68,7 @@ flowchart TB
 - Scaffold Tauri 2 + React + TS + Tailwind v4 + Zustand
 - Sidebar com Chats (topo), Documentos e Conexões (placeholders)
 - SQLite + migrações; CRUD de chats (criar/listar/renomear/excluir) persistido
-- Verificado: compila, janela abre, `localmind.db` criado
+- Verificado: compila, janela abre, `readme.db` criado
 
 ---
 
@@ -81,8 +81,8 @@ flowchart TB
 
 **Config & Storage Manager** — DONE
 
-- Pasta-base configurável contendo `models/`, `documents/`, `vectors/`, `chats/<id>/tmp/`, `localmind.db`
-- Persistência de settings; validação/criação da pasta; realocar `localmind.db` para a pasta escolhida
+- Pasta-base configurável contendo `models/`, `documents/`, `vectors/`, `chats/<id>/tmp/`, `readme.db`
+- Persistência de settings; validação/criação da pasta; realocar `readme.db` para a pasta escolhida
 
 **Wizard de 1º uso** — DONE
 
@@ -235,7 +235,7 @@ flowchart TB
 
 ## M6 — Memória de conversa (RAG híbrido) — ✅ COMPLETE (2026-07-27, 9/9 tasks)
 
-> **A T9 fechou inteira em 2026-07-27 (AD-050).** Além da recuperação já registrada na AD-047/AD-048, os dois critérios que faltavam foram medidos em A/B, com a pergunta feita **uma única vez por conversa**: numa conversa cujo histórico nunca fora indexado, ligar a memória e clicar em *Indexar histórico* (12 turnos, ~1,6 s, `vectors/` +133.963 B) fez a pergunta sobre o turno 1 ser respondida com **"Falcão Azul … 82 mil reais"**; e numa conversa cuja memória **existia** no banco vetorial, desligar o toggle bastou para o modelo responder *"não tenho a capacidade de lembrar interações anteriores"*. Gates: **177 testes Rust**, `npm run build` limpo.
+> **A T9 fechou inteira em 2026-07-27 (AD-050).** Além da recuperação já registrada na AD-047/AD-048, os dois critérios que faltavam foram medidos em A/B, com a pergunta feita **uma única vez por conversa**: numa conversa cujo histórico nunca fora indexado, ligar a memória e clicar em *Indexar histórico* (12 turnos, ~1,6 s, `vectors/` +133.963 B) fez a pergunta sobre o turno 1 ser respondida com **"Falcão Azul … 82 mil reais"**; e numa conversa cuja memória **existia** no banco vetorial, desligar o toggle bastou para o modelo responder *"não tenho a capacidade de lembrar interações anteriores"*. Gates **daquele dia**: **177 testes Rust**, `npm run build` limpo. *(Registro histórico, preservado de propósito: diz o que era verdade quando a T9 passou. O baseline de hoje é **181 / 0 / 16** — a feature `generated-types` acrescentou 4 testes depois disto. Remedido na run 002.)*
 >
 > ⚠️ **A camada mudou de forma na mesma sessão (AD-050).** A memória continua a ser a última a receber **orçamento**, mas deixou de ser sempre a última em **posição**: quando o turno recuperado é o acerto mais próximo, é ele que fica colado na pergunta. Isso revisa MEM-10 e MEM-12.
 
@@ -349,6 +349,37 @@ flowchart TB
 **Fora do escopo:** embutir um modelo GGUF (o usuário escolhe o que cabe na máquina), CUDA/ROCm, macOS, e voltar Ollama atrás de flag.
 
 > **Interação com o M7.1:** os dois mexem em `runtime/`. O M7.1 muda **como** o sidecar é iniciado (sem console, dentro de um Job Object, com log em arquivo); o M9 muda **de onde vem o binário** e quem pergunta por ele. São eixos independentes e podem ser executados em qualquer ordem — só não em paralelo por dois agentes, porque `runtime/process.rs` e `runtime/detect.rs` são tocados pelos dois. A faxina do M9 apaga apenas os quatro subdiretórios listados, nunca `<base>/runtime/` inteiro, justamente para não levar junto o `llama-server.log` do M7.1.
+
+---
+
+## M10 — Pivô para leitor — 📋 PLANEJADO (2026-09-04, ver AD-052)
+
+O produto deixa de ser um chat com RAG e passa a ser um **leitor**: importar livros, remontá-los para leitura na tela e lê-los em voz alta com marcação estilo karaokê. Planejado em três fatias; **só a primeira tem tasks**.
+
+### M10.1 — Biblioteca de livros — 📋 PLANEJADO, 9 tasks, nada implementado
+`.specs/features/book-library/` (spec + design + tasks)
+
+- Importar PDF e Kindle (`.epub`, `.mobi`, `.azw`, `.azw3`) pela aba que hoje é Documentos
+- Guardar em `<base_path>/library/`; botão que abre a pasta no explorador, com o caminho absoluto na tela
+- **Sem nenhum passo de RAG** sobre esses arquivos
+- Recusar na importação o que o leitor não vai abrir: formato fora da lista e arquivo com DRM
+- Tabela nova `books` (migração 9) — o porquê de não reusar `documents` está na AD-052
+
+### M10.2 — Leitor — ⛔ NÃO PLANEJADO
+Extrair o texto, remontar o livro em formato navegável **preservando as gravuras**, renderizar na tela. É esta fatia que define a **âncora de posição de leitura**, e é por isso que a `reading-history` está bloqueada.
+
+### M10.3 — Audiobook com karaokê — ⛔ NÃO PLANEJADO, VIABILIDADE NÃO MEDIDA
+Ler em voz alta marcando a palavra corrente. **Gate:** existe TTS local com limite por palavra (*word boundary*)? Não foi medido. Se não existir, esta fatia cai ou muda de forma — medir **antes** de construir o leitor em volta dela.
+
+### Histórico de leitura — 📋 REQUISITOS ESCRITOS, SEM TASKS
+`.specs/features/reading-history/` — a área de chat vira o histórico, com "onde parou". Sem tasks de propósito: a posição não tem quem a escreva até o M10.2 existir, e o que "posição" significa depende do design dele.
+
+### O que o M10 revoga
+
+- **M5 (RAG global):** a UI de importação para RAG sai junto com a aba. O backend fica.
+- **M4/M6 (chat e memória):** a lista de chats dá lugar ao histórico de leituras.
+
+Em ambos os casos a revogação é **marcada agora e executada depois** (AD-052). Gatilho da remoção do código: a primeira sessão após o leitor renderizar um livro ponta a ponta.
 
 ---
 

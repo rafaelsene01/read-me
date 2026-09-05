@@ -1,12 +1,14 @@
 {
-  "name": "localmind",
+  "name": "readme",
   "private": true,
-  "version": "0.2.0",
+  "version": "0.0.1",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "test:scripts": "node --test scripts/*.test.mjs",
     "tauri": "tauri",
     "vendor": "node scripts/vendor-runtime.mjs"
@@ -28,13 +30,17 @@
   "devDependencies": {
     "@tailwindcss/postcss": "^4.3.3",
     "@tauri-apps/cli": "^2",
+    "@testing-library/dom": "^10.4.1",
+    "@testing-library/react": "^16.3.2",
     "@types/react": "^19.1.8",
     "@types/react-dom": "^19.1.6",
     "@vitejs/plugin-react": "^4.6.0",
     "autoprefixer": "^10.5.4",
+    "jsdom": "^29.1.1",
     "postcss": "^8.5.23",
     "tailwindcss": "^4.3.3",
     "typescript": "~5.8.3",
-    "vite": "^7.0.4"
+    "vite": "^7.0.4",
+    "vitest": "^4.1.10"
   }
 }

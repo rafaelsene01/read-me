@@ -16,7 +16,7 @@ rascunho no `latest.json`).
 
 | Task | Status | Evidência |
 | --- | --- | --- |
-| T1 | ✅ | `tauri.conf.json` com `mainBinaryName`, `createUpdaterArtifacts`, NSIS `currentUser`, targets explícitos. **Não verificado:** que o binário passe a se chamar `LocalMind.exe` (exige um `tauri build`) |
+| T1 | ✅ | `tauri.conf.json` com `mainBinaryName`, `createUpdaterArtifacts`, NSIS `currentUser`, targets explícitos. **Não verificado:** que o binário passe a se chamar `ReadMe.exe` (exige um `tauri build`) |
 | T2 | ✅ | Par gerado pelo mantenedor; `gh secret list` confirma `TAURI_SIGNING_PRIVATE_KEY` e `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` (2026-07-26 19:36 UTC); `plugins.updater.pubkey` preenchida e validada (2 linhas, `minisign public key`, 42 bytes). **Incidente:** a chave **privada** foi colada primeiro por engano — pega antes de qualquer commit, e agora há um teste (`the_configured_public_key_is_a_public_key_and_parses`) que falha o `cargo test` se isso se repetir |
 | T3 | ✅ | 10 testes verdes. Conferido na mão: `patch` sobre `0.1.0` → `0.1.1`; `minor` sobre `v1.9.3` → `1.10.0` (prova que o bump não é lexicográfico) |
 | T4 | ✅ | `git cliff --unreleased --strip all` rodado contra o histórico real: 40+ commits agrupados em Novidades/Correções/Documentação/Refatoração/Testes/Manutenção, exit 0 |
@@ -62,7 +62,7 @@ Com isso, o `ci.yml` **rodou verde no GitHub em 2m17s** (run 30219419571) — a 
 
 Disparada com `patch`. O `prepare` passou em 20s (versão `0.1.1`, CHANGELOG, commit, tag, push). Os dois builds rodaram ~29 min e **o mantenedor cancelou a execução** (`The run was canceled by @rafaelsene01` — não foi falha).
 
-**O que já funcionava, medido:** o build do Linux compilou o binário de release em **26m15s** e bundlou os dois artefatos antes do cancelamento — `LocalMind_0.1.1_amd64.deb` e `LocalMind_0.1.1_amd64.AppImage`. A metade Linux do REL-08 está essencialmente provada; o Windows ainda não terminou nenhuma vez.
+**O que já funcionava, medido:** o build do Linux compilou o binário de release em **26m15s** e bundlou os dois artefatos antes do cancelamento — `ReadMe_0.1.1_amd64.deb` e `ReadMe_0.1.1_amd64.AppImage`. A metade Linux do REL-08 está essencialmente provada; o Windows ainda não terminou nenhuma vez.
 
 **O defeito de projeto que o cancelamento expôs:** o `prepare` faz push do commit e da tag **antes** de qualquer build. Uma interrupção deixava tag órfã, nenhuma release, e o número da versão **queimado** — o disparo seguinte calcularia `0.1.2`, porque a última tag passaria a ser `v0.1.1`. Não havia caminho de retentativa.
 
@@ -128,7 +128,7 @@ Fase 7 — Verificação real
 **Tools**: MCP: NONE · Skill: NONE
 
 **Done when**:
-- [ ] `"mainBinaryName": "LocalMind"` presente
+- [ ] `"mainBinaryName": "ReadMe"` presente
 - [ ] `bundle.createUpdaterArtifacts: true`
 - [ ] `bundle.windows.nsis.installMode: "currentUser"` explícito
 - [ ] `bundle.targets` deixa de ser `"all"` e lista os formatos alvo
@@ -136,7 +136,7 @@ Fase 7 — Verificação real
 
 **Tests**: none (arquivo de config)
 **Gate**: build
-**Verify**: `npx tauri build --help` roda sem erro de schema; após um build local, o executável se chama `LocalMind.exe` e não mais `tauri-app.exe`
+**Verify**: `npx tauri build --help` roda sem erro de schema; após um build local, o executável se chama `ReadMe.exe` e não mais `tauri-app.exe`
 **Commit**: `build(tauri): set mainBinaryName, updater artifacts and currentUser NSIS`
 
 ---
@@ -152,7 +152,7 @@ Fase 7 — Verificação real
 **Tools**: MCP: NONE · Skill: NONE
 
 **Done when**:
-- [ ] `npx tauri signer generate -w ~/.tauri/localmind.key` executado pelo mantenedor
+- [ ] `npx tauri signer generate -w ~/.tauri/readme.key` executado pelo mantenedor
 - [ ] Secrets `TAURI_SIGNING_PRIVATE_KEY` e `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` existem no repositório (`gh secret list` confirma)
 - [ ] `plugins.updater.pubkey` preenchido com a chave **pública**
 - [ ] `plugins.updater.endpoints` aponta para `.../releases/latest/download/latest.json`
@@ -275,7 +275,7 @@ Fase 7 — Verificação real
 **Tools**: MCP: NONE · Skill: NONE
 
 **Done when**:
-- [ ] Produz `LocalMind_<versão>_x64-portable.zip` com a raiz `LocalMind/` contendo `LocalMind.exe`, `.portable` (vazio) e `README.txt`
+- [ ] Produz `ReadMe_<versão>_x64-portable.zip` com a raiz `ReadMe/` contendo `ReadMe.exe`, `.portable` (vazio) e `README.txt`
 - [ ] Falha com mensagem clara se o binário de origem não existir
 - [ ] Imprime o caminho absoluto do zip em stdout (o workflow consome isso)
 - [ ] Função de montagem do nome do arquivo é pura e testada
@@ -684,7 +684,7 @@ Fase 7 — Verificação real
 
 **Tests**: none (configuração de build)
 **Gate**: full — o app precisa abrir depois da mudança
-**Verify**: comparar o tamanho de `target/release/LocalMind.exe` contra os 226 MB atuais
+**Verify**: comparar o tamanho de `target/release/ReadMe.exe` contra os 226 MB atuais
 **Commit**: `build: strip and optimize the release profile`
 
 ---
@@ -725,7 +725,7 @@ O pipeline rodou inteiro, sem intervenção: `v0.1.1` em 2026-07-26 (54m46s) e `
 **O defeito: o update portátil apontava para um link morto.** No `latest.json` publicado,
 
 ```
-windows-x86_64-portable -> .../releases/download/untagged-1d4dbf70f0443ab3b6c9/LocalMind_0.2.0_x64-portable.zip
+windows-x86_64-portable -> .../releases/download/untagged-1d4dbf70f0443ab3b6c9/ReadMe_0.2.0_x64-portable.zip
 ```
 
 Medido: essa URL responde **HTTP 404**; a mesma com a tag responde **200**. As outras seis chaves

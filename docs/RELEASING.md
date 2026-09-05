@@ -1,6 +1,6 @@
 # Publicando uma release
 
-Releases do LocalMind são **manuais por definição**. O workflow `release.yml` tem
+Releases do ReadMe são **manuais por definição**. O workflow `release.yml` tem
 um único gatilho — `workflow_dispatch` — e nenhum `push`, `tag` ou `schedule`.
 Um merge em `master` nunca publica nada.
 
@@ -16,13 +16,13 @@ pacote que não valide contra a chave pública.
 # 1. Gerar o par de chaves. Guarde a senha num gerenciador: sem ela,
 #    ou sem o arquivo, não há como assinar novas versões — e um app já
 #    instalado nunca mais aceitará uma atualização sua.
-npx tauri signer generate -w ~/.tauri/localmind.key
+npx tauri signer generate -w ~/.tauri/readme.key
 
 # 2. Cadastrar os segredos no repositório
-gh secret set TAURI_SIGNING_PRIVATE_KEY < ~/.tauri/localmind.key
+gh secret set TAURI_SIGNING_PRIVATE_KEY < ~/.tauri/readme.key
 gh secret set TAURI_SIGNING_PRIVATE_KEY_PASSWORD
 
-# 3. Copiar a chave PÚBLICA (~/.tauri/localmind.key.pub) para
+# 3. Copiar a chave PÚBLICA (~/.tauri/readme.key.pub) para
 #    src-tauri/tauri.conf.json -> plugins.updater.pubkey  e commitar.
 #    A pública vai para o repositório; a privada nunca.
 ```
@@ -74,11 +74,11 @@ Se o revert conflitar (alguém deu push em `master` no meio), o job falha com in
 Ao terminar, a release deve conter:
 
 ```
-LocalMind_X.Y.Z_x64_en-US.msi          (+ .sig)
-LocalMind_X.Y.Z_x64-setup.exe          (+ .sig)
-LocalMind_X.Y.Z_amd64.deb
-LocalMind_X.Y.Z_amd64.AppImage         (+ .sig)
-LocalMind_X.Y.Z_x64-portable.zip       (+ .sig)
+ReadMe_X.Y.Z_x64_en-US.msi          (+ .sig)
+ReadMe_X.Y.Z_x64-setup.exe          (+ .sig)
+ReadMe_X.Y.Z_amd64.deb
+ReadMe_X.Y.Z_amd64.AppImage         (+ .sig)
+ReadMe_X.Y.Z_x64-portable.zip       (+ .sig)
 latest.json
 ```
 
@@ -148,8 +148,8 @@ reputação do executável perante o Windows.
 O `.zip` existe para máquinas onde instalar exige administrador. Ele contém:
 
 ```
-LocalMind/
-├── LocalMind.exe
+ReadMe/
+├── ReadMe.exe
 ├── .portable      ← não apague: é o que mantém o modo portátil
 └── README.txt
 ```

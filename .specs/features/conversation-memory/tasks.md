@@ -2,19 +2,22 @@
 
 **Design:** `.specs/features/conversation-memory/design.md`
 **Spec:** `.specs/features/conversation-memory/spec.md`
-**Status:** **T1–T8 concluídas; a T9 rodou, reprovou o código, e o código corrigido passou
-(2026-07-27).** A conversa lembrou do primeiro turno depois de 16 turnos. Sobram dois itens da T9
-que exigem clique: o backfill numa conversa real e o efeito de desligar o toggle.
+**Status:** **9 de 9 concluídas (2026-07-27).** A T9 rodou, reprovou o código, o código corrigido
+passou, e os dois critérios que ainda exigiam clique fecharam na AD-050 — o backfill numa conversa
+real e o efeito de desligar o toggle sobre a **resposta**, medidos em A/B com a pergunta feita uma
+única vez por conversa.
+
 A conversa aconteceu no app e a memória **não recuperava nada** — duas causas, ambas registradas na
 AD-047: a busca pedia exatamente um candidato e o filtro de duplicata rodava depois do corte
 (`MEMORY_CANDIDATES = 8` e o filtro antes do `take`), e o histórico podia consumir todo o orçamento
 antes da memória (reserva de 15%). **Depois das correções, a mesma pergunta que falhara 3× foi
-respondida com "Pantera Cinzenta" e "47 mil reais".** Gates atuais: `cargo test` **174 passando /
-12 ignorados** (eram 169/12), `npm run build` limpo, i18n **148/148**.
+respondida com "Pantera Cinzenta" e "47 mil reais".**
 
-**Ainda aberto na T9:** o backfill numa conversa real, e o critério *"desligar o toggle faz o modelo
-parar de se prender ao que já respondeu"* — desligar foi verificado só do lado da **gravação**
-(`vectors/` para de crescer), não do efeito na resposta.
+**Gates medidos em 2026-07-27 (run 001):** `cargo test --lib` **177 passando / 0 falhas / 15
+ignorados**, `npm run build` limpo, i18n **148/148** (conferido chave a chave, zero divergência).
+
+**O que continua aberto:** só o `MEMORY_TOP_K = 1`, que segue sem justificativa medida em conversa
+real — não é critério da T9, é a pendência registrada no `STATE.md`.
 
 ---
 
@@ -30,7 +33,7 @@ parar de se prender ao que já respondeu"* — desligar foi verificado só do la
 | T6 | ✅ | `index_chat_history` + evento `memory-backfill-progress`. **Escrito na T2 junto do módulo** — ver o desvio abaixo |
 | T7 | ✅ | `use_memory` no `Chat` dos dois lados, segundo interruptor, botão de indexar com progresso, 5 chaves novas em cada idioma (**147/147**) |
 | T8 | ✅ | ROADMAP, STATE (AD-044), a rastreabilidade acima, e o prefixo `MEM` na regra `spec-driven-changes.md`, que listava dez e não incluía este |
-| T9 | ⏳ Quase | **A pergunta central foi respondida em conversa real (2026-07-27):** numa conversa de **16 turnos completos / 35.220 caracteres**, a pergunta sobre o **primeiro** turno foi respondida **inteira** — codinome *e* valor. As cinco tentativas anteriores da mesma pergunta tinham sido recusadas. Falta o backfill e o efeito de desligar o toggle, que exigem clicar |
+| T9 | ✅ | **A pergunta central foi respondida em conversa real (2026-07-27):** numa conversa de **16 turnos completos / 35.220 caracteres**, a pergunta sobre o **primeiro** turno foi respondida **inteira** — codinome *e* valor. As cinco tentativas anteriores da mesma pergunta tinham sido recusadas. **O backfill e o toggle fecharam na AD-050**, dirigindo a UI: backfill de 12 turnos em ~1,6 s (`vectors/` **+133.963 B**, progresso lido do DOM), e desligar o toggle bastou para o modelo negar lembrar, numa conversa cuja memória existia no banco |
 
 ### O que foi verificado contra um recurso real, e não deduzido
 
@@ -58,7 +61,7 @@ A Open Question #1 do design — *"um turno rotulado é bom material de embeddin
 ambiente e roda sobre uma **cópia** do cache de modelos do usuário:
 
 ```
-LOCALMIND_EMBED_CACHE=<cópia> LOCALMIND_ORT_DYLIB=<onnxruntime.dll> \
+README_EMBED_CACHE=<cópia> README_ORT_DYLIB=<onnxruntime.dll> \
   cargo test --lib memory_quality -- --ignored --nocapture
 ```
 
@@ -403,10 +406,21 @@ A isca fica em **#0**. Com o funil antigo — `search` pedindo exatamente `MEMOR
 filtro de verbatim rodando **depois** do corte — ela consumia a única vaga e era descartada,
 sobrando zero. É a razão pela qual reformular a pergunta de forma natural *piorava* a recuperação.
 
-**O que continua aberto, e não é detalhe:** o backfill nunca rodou numa conversa de verdade, e o
-efeito de **desligar** o toggle sobre a resposta não foi observado. Os dois exigem cliques na UI.
-O `MEMORY_TOP_K = 1` também segue sem justificativa medida — uma conversa em que dois turnos
-antigos importam ao mesmo tempo continua sem ter sido testada.
+**Os dois itens que este parágrafo dava como abertos fecharam em 2026-07-27** (AD-050), dirigindo a
+UI: o backfill rodou numa conversa real (12 turnos em ~1,6 s, `vectors/` **+133.963 B**, progresso
+lido do DOM) e desligar o toggle fez o modelo responder *"não tenho a capacidade de lembrar
+interações anteriores"* numa conversa cuja memória **existia** no banco. Ver a tabela A/B em "O
+backfill e o toggle, medidos em A/B", acima.
+
+**O que continua aberto:** o `MEMORY_TOP_K = 1` segue sem justificativa medida — uma conversa em que
+dois turnos antigos importam ao mesmo tempo continua sem ter sido testada.
+
+> **Nota de auditoria (2026-07-27, run 001 da skill `spec-loop`).** Este parágrafo afirmava o
+> contrário do checklist "Done when" que está algumas dezenas de linhas acima, no mesmo arquivo, e
+> do `STATE.md`/`ROADMAP.md`, que davam o M6 como 9/9 desde a AD-050. Eram **três afirmações
+> incompatíveis dentro do mesmo `tasks.md`**. Fica registrado porque o modo de falha é instrutivo:
+> a AD-050 atualizou o checklist e o resumo do topo, mas não a prosa do corpo da task — e é a prosa
+> que alguém lê quando quer entender *por que* algo ficou aberto.
 
 **Tests:** none (UAT) · **Gate:** full
 **Commit:** —

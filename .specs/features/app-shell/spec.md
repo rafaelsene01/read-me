@@ -1,6 +1,6 @@
 # App Shell & Gerenciamento de Chats — Specification
 
-> **Status: ✅ IMPLEMENTADO e verificado (2026-07-24).** Backend compila, janela abre, `localmind.db` criado e migrado. Falta apenas a verificação manual dos fluxos de CRUD na UI (clicar). Ver STATE.md L-002. A sidebar ganha uma 4ª seção (Configurações) no M2.
+> **Status: ✅ IMPLEMENTADO e verificado (2026-07-24).** Backend compila, janela abre, `readme.db` criado e migrado. Falta apenas a verificação manual dos fluxos de CRUD na UI (clicar). Ver STATE.md L-002. A sidebar ganha uma 4ª seção (Configurações) no M2.
 
 ## Problem Statement
 

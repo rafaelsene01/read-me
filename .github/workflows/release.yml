@@ -217,7 +217,7 @@ jobs:
           NO_STRIP: "true"
         with:
           tagName: ${{ needs.prepare.outputs.tag }}
-          releaseName: LocalMind ${{ needs.prepare.outputs.tag }}
+          releaseName: ReadMe ${{ needs.prepare.outputs.tag }}
           releaseBody: ${{ needs.prepare.outputs.notes }}
           # Stays a draft until `finalize` confirms every artifact landed.
           releaseDraft: true
@@ -277,7 +277,7 @@ jobs:
           set -euo pipefail
           TAG="${{ needs.prepare.outputs.tag }}"
           VERSION="${{ needs.prepare.outputs.version }}"
-          ZIP_NAME="LocalMind_${VERSION}_x64-portable.zip"
+          ZIP_NAME="ReadMe_${VERSION}_x64-portable.zip"
 
           gh release download "$TAG" -p latest.json -p "${ZIP_NAME}.sig" --clobber
           # The asset URL is read from the release, never rebuilt from a guess:

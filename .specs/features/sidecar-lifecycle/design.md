@@ -8,7 +8,7 @@ Três mudanças, todas concentradas em `runtime/`, e nenhuma delas atravessa a f
 
 ```mermaid
 flowchart LR
-    subgraph app["Processo do LocalMind"]
+    subgraph app["Processo do ReadMe"]
         SP["runtime::process::spawn"]
         JOB["runtime::job::JobHandle<br/>(Windows, um por processo)"]
         LOG["runtime::log::open_rotating"]
@@ -21,7 +21,7 @@ flowchart LR
     JOB -.->|"handle fecha quando o processo morre<br/>→ kernel mata o filho"| CHILD
 ```
 
-O ponto que amarra tudo: **o handle do job pertence ao processo do LocalMind**. Quando esse processo termina — normalmente, por crash, ou por `TerminateProcess` — o Windows fecha todos os handles dele. Fechar o último handle de um job com `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` faz o kernel matar tudo que estiver dentro. Não há polling, não há watchdog, não há processo auxiliar: a garantia é do kernel, e é por isso que ela vale mesmo quando o nosso código não tem chance de rodar.
+O ponto que amarra tudo: **o handle do job pertence ao processo do ReadMe**. Quando esse processo termina — normalmente, por crash, ou por `TerminateProcess` — o Windows fecha todos os handles dele. Fechar o último handle de um job com `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` faz o kernel matar tudo que estiver dentro. Não há polling, não há watchdog, não há processo auxiliar: a garantia é do kernel, e é por isso que ela vale mesmo quando o nosso código não tem chance de rodar.
 
 ---
 
@@ -31,7 +31,7 @@ O ponto que amarra tudo: **o handle do job pertence ao processo do LocalMind**. 
 
 `std::os::windows::process::CommandExt::creation_flags(0x08000000)`. Está na biblioteca padrão; não precisa de crate nenhum.
 
-**Verificado** na documentação do Rust e na de Process Creation Flags da Microsoft: `CREATE_NO_WINDOW` = `0x08000000`, e a doc registra a ressalva de que a flag **é ignorada se o executável não for uma aplicação de console** — o que é inofensivo aqui e explica por que o mesmo tratamento não faz diferença para o relaunch do próprio LocalMind em `update_commands.rs`.
+**Verificado** na documentação do Rust e na de Process Creation Flags da Microsoft: `CREATE_NO_WINDOW` = `0x08000000`, e a doc registra a ressalva de que a flag **é ignorada se o executável não for uma aplicação de console** — o que é inofensivo aqui e explica por que o mesmo tratamento não faz diferença para o relaunch do próprio ReadMe em `update_commands.rs`.
 
 Descartado: `Stdio::null()` como forma de esconder — não esconde, o console aparece do mesmo jeito. E `#[cfg(windows)]` espalhado pelo `spawn`: em vez disso, uma função `configure(cmd: &mut Command)` com duas implementações por `cfg`, chamada num ponto só (SIDE-03).
 

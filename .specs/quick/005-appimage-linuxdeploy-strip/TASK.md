@@ -14,7 +14,7 @@ AppImage. O `.deb` da **mesma execução** foi empacotado sem erro.
 
 | Release | `bundle.resources`? | AppImage |
 | --- | --- | --- |
-| `v0.2.0` | não (a tag é anterior ao M9) | ✅ `LocalMind_0.2.0_amd64.AppImage` publicado, com `.sig` |
+| `v0.2.0` | não (a tag é anterior ao M9) | ✅ `ReadMe_0.2.0_amd64.AppImage` publicado, com `.sig` |
 | `v0.3.0` | sim — **256,2 MB** vendorizados | ❌ falhou no `linuxdeploy` |
 
 Conferido com `gh release view v0.2.0` e `git show v0.2.0:src-tauri/tauri.conf.json`, que não tem

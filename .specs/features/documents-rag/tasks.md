@@ -1,7 +1,9 @@
 # Base de Conhecimento & RAG Global Tasks
 
 **Design**: `.specs/features/documents-rag/design.md`
-**Status**: Complete (2026-07-25) — exceto a verificação pela UI (importar clicando), listada abaixo
+**Status**: **Complete (2026-07-25); a verificação pela UI fechou em 2026-07-27** (AD-050) — importação pelo seletor de arquivos nativo, com a linha aparecendo na lista em **517 ms**, o progresso indo de `Indexando` (+5,8 s) a `Pronto` em **16,6 s** para um TXT de 134 KB, e a remoção exercitada. Os estados `Na fila`/`Lendo`/`Dividindo` **não** foram capturados: passam em menos que o intervalo de leitura de 120 ms — ausência de captura, não ausência do estado.
+
+> **Nota de auditoria (2026-07-27, run 001).** Esta linha dizia *"exceto a verificação pela UI"* dois dias depois de a AD-050 tê-la feito. O `tasks.md` desta feature não tinha nenhuma menção a 2026-07-27 nem à AD-050 — a sessão que fez a UAT registrou o resultado no `STATE.md` e no `ROADMAP.md` e não voltou aqui.
 
 ---
 
@@ -271,7 +273,7 @@ T10 ──→ T11 (Wire no App.tsx)
 
 **Done when**:
 - [x] `npm run build` passa
-- [ ] `npm run tauri dev`: importar um PDF/TXT real, ver progresso até "ready", remover e confirmar que some da lista
+- [x] `npm run tauri dev`: importar um PDF/TXT real, ver progresso até "ready", remover e confirmar que some da lista — **feito em 2026-07-27 (AD-050)**, dirigindo a UI: TXT de 134 KB aparecendo na lista em 517 ms, `Indexando` em +5,8 s, `Pronto` em 16,6 s, remoção exercitada. Caixa marcada na **run 002**: a UAT tinha sido executada e registrada no `Status` do topo, no `STATE.md` e no `ROADMAP.md`, mas ninguém voltou para marcar aqui — três documentos diziam feito e a caixa dizia pendente
 
 **Tests**: none
 **Gate**: full (`npm run tauri dev` até `Finished`+`Running` sem erro)

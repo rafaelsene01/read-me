@@ -132,7 +132,7 @@ Cadeia de verificação cumprida. O que foi confirmado e o que ficou declarado c
 - **Dependencies:** `tauri::Manager` (path resolver), `runtime::Backend`
 - **Reuses:** a busca recursiva de `find_server_binary`/`find_dylib`, unificada numa única `find_file(dir, name)`
 
-**`ensure_executable` — a parte que não aposta na sorte.** No Unix, lê o modo do arquivo; se já tem `0o111`, devolve o caminho e acabou. Se não tem, tenta `set_permissions` no lugar; se isso falhar (o caso real: `/usr/lib/LocalMind` pertence ao root e o app roda como usuário), **copia** a pasta inteira do backend para `<pasta-base>/runtime/llama/<backend>`, marca `0o755` e devolve o caminho da cópia. No Windows é um no-op — não existe bit de execução. O custo (uma cópia de ~100 MB) só aparece se o empacotador realmente perder o bit, e a corretude não depende de descobrirmos se ele perde.
+**`ensure_executable` — a parte que não aposta na sorte.** No Unix, lê o modo do arquivo; se já tem `0o111`, devolve o caminho e acabou. Se não tem, tenta `set_permissions` no lugar; se isso falhar (o caso real: `/usr/lib/ReadMe` pertence ao root e o app roda como usuário), **copia** a pasta inteira do backend para `<pasta-base>/runtime/llama/<backend>`, marca `0o755` e devolve o caminho da cópia. No Windows é um no-op — não existe bit de execução. O custo (uma cópia de ~100 MB) só aparece se o empacotador realmente perder o bit, e a corretude não depende de descobrirmos se ele perde.
 
 ### `providers::llama_server::LlamaServerClient` (substitui 4 clientes)
 
@@ -241,7 +241,7 @@ Os nomes de asset ficam **escritos por extenso**, não montados por template: fo
 
 | Cenário | Tratamento | O que o usuário vê |
 | --- | --- | --- |
-| Recurso ausente/instalação corrompida | Erro nomeando o arquivo procurado e o diretório | "Componente não encontrado em … — reinstale o LocalMind" (nunca uma tentativa de download) |
+| Recurso ausente/instalação corrompida | Erro nomeando o arquivo procurado e o diretório | "Componente não encontrado em … — reinstale o ReadMe" (nunca uma tentativa de download) |
 | Vulkan não executa | Fallback silencioso para o binário CPU embutido | "Nenhuma GPU compatível — usando CPU" |
 | Nenhum dos dois executa | Erro com o motivo do último `probe` | Card do runtime em estado de erro, app segue aberto |
 | Bit de execução ausente e `/usr/lib` só-leitura | Cópia para a pasta-base + `0o755` | Nada — resolve sozinho, com uma linha de log |
@@ -275,10 +275,10 @@ Os nomes de asset ficam **escritos por extenso**, não montados por template: fo
 
    | Artefato | Tamanho |
    | --- | --- |
-   | `LocalMind_0.1.1_x64-setup.exe` (NSIS) | **47,6 MiB** |
-   | `LocalMind_0.1.1_x64_en-US.msi` | **83,8 MiB** |
-   | `LocalMind_0.1.1_x64-portable.zip` | **92,0 MiB** |
-   | `LocalMind.exe` (binário nu) | **159,2 MiB** |
+   | `ReadMe_0.1.1_x64-setup.exe` (NSIS) | **47,6 MiB** |
+   | `ReadMe_0.1.1_x64_en-US.msi` | **83,8 MiB** |
+   | `ReadMe_0.1.1_x64-portable.zip` | **92,0 MiB** |
+   | `ReadMe.exe` (binário nu) | **159,2 MiB** |
    | `resources/` descompactado | **115,0 MiB** |
 
    **Ficou muito abaixo do teto de ~450 MB que dispararia a reavaliação da poda** — o instalador NSIS cabe em menos de um nono dele. A razão é que os 274 MiB de payload (binário + recursos) comprimem bem: DLLs de `ggml` e o `onnxruntime.dll` são código, e o LZMA sólido do NSIS resolve. **A poda agressiva do `lib/` do ONNX Runtime não é necessária**; a que já existe (`.pdb`/`.lib`/`.exp`/headers) foi suficiente.

@@ -1,8 +1,8 @@
-# LocalMind — Chat de IA Local com RAG
+# ReadMe — Chat de IA Local com RAG
 
 **Vision:** Aplicação desktop offline-first que funciona como um chat de IA com o modelo rodando na própria máquina, com uma base de conhecimento em documentos usada como RAG — empacotada em um instalador único para Windows e Linux que já traz o motor dentro dele.
 **For:** Usuários técnicos e knowledge workers que querem conversar com uma IA usando seus próprios documentos, 100% local, sem enviar dados para a nuvem.
-**Solves:** Ferramentas de chat com IA hoje dependem da nuvem (privacidade/custo) ou exigem montar manualmente um pipeline de RAG local. LocalMind entrega isso pronto, em um único instalador, sem configuração de servidores.
+**Solves:** Ferramentas de chat com IA hoje dependem da nuvem (privacidade/custo) ou exigem montar manualmente um pipeline de RAG local. ReadMe entrega isso pronto, em um único instalador, sem configuração de servidores.
 
 ## Goals
 
@@ -33,7 +33,7 @@
 
 **v1 includes:**
 
-- Janela desktop com sidebar de 3 zonas: **Chats** (topo), **Documentos/base de conhecimento** (meio), **Runtime** (base)
+- Janela desktop com sidebar de **4 zonas**, na ordem em que `src/components/Sidebar/Sidebar.tsx` as renderiza: **Chats** (topo), **Documentos/base de conhecimento**, **Runtime**, **Configurações** (base). Corrigido em 2026-07-28 — o texto dizia 3 zonas e omitia Configurações, que é uma das quatro áreas do `uiStore.activeView`
 - Gerenciamento de chats (criar, listar, renomear, excluir) com histórico persistente e isolado por chat
 - Um runtime embutido (llama.cpp), com escolha automática entre os backends Vulkan e CPU, lista de modelos instalados e catálogo para baixar
 - Chat com streaming e system prompt opcional

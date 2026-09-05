@@ -34,7 +34,7 @@ src-tauri/.fastembed_cache/
 # The public key is not secret, but it lives in tauri.conf.json, not loose here.
 *.key
 *.key.pub
-localmind.key*
+readme.key*
 
 # Binary components vendored into the installer by `npm run vendor`.
 # ~120 MB of build artefact, pinned in scripts/vendor.json — not source.

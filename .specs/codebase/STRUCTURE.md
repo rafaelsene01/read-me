@@ -2,28 +2,41 @@
 
 **Root:** `D:\chat-ia-local`
 
+**Revisado em 2026-07-28** (`ls -R src/components`, `ls src-tauri/src`, `ls -a .`). A árvore anterior listava `src/components/Connections/` — diretório que não existe desde o M9 — e omitia `Documents/`, `Runtime/`, `Update/`, `src/test/`, `scripts/`, `.github/` e `docs/`.
+
 ## Directory Tree
 
 ```
 chat-ia-local/
+├── .github/workflows/          # ci.yml (validação) · release.yml (workflow_dispatch)
 ├── .specs/                     # Spec-driven docs (este sistema)
 │   ├── project/                # PROJECT.md · ROADMAP.md · STATE.md
 │   ├── codebase/               # Brownfield mapping (estes arquivos)
-│   └── features/               # spec.md/design.md/tasks.md por feature
+│   ├── features/               # spec.md/design.md/tasks.md por feature
+│   ├── quick/ · runs/          # quick tasks e journal da skill spec-loop
+├── .claude/                    # rules/ e skills/ locais do repositório
+├── docs/RELEASING.md           # procedimento de release
+├── scripts/                    # Node puro: bump-version · make-portable
+│                               #   · patch-latest-json · check-linux-bundle
+│                               #   · vendor-runtime (+ *.test.mjs) · vendor.json
 ├── src/                        # Frontend React + TS
 │   ├── components/
-│   │   ├── Chat/               # ChatPanel.tsx
-│   │   ├── Connections/        # ConnectionsPanel · ConnectionsList · ModelsList
-│   │   │                       #   · ModelDownloadCard · ModelConfigForm
+│   │   ├── Chat/               # ChatPanel · ContextGauge · MessageInput
+│   │   ├── Documents/          # DocumentsPanel · DocumentRow · DocumentStatusBadge
 │   │   ├── Onboarding/         # Wizard.tsx
+│   │   ├── Runtime/            # RuntimePanel · RuntimeCard · ModelsList
+│   │   │                       #   · ModelDownloadCard · ModelConfigForm
 │   │   ├── Settings/           # SettingsPanel.tsx
-│   │   └── Sidebar/            # Sidebar · ChatList · DocumentsSection
-│   │                           #   · RuntimeSection · SettingsSection
+│   │   ├── Sidebar/            # Sidebar · ChatList · DocumentsSection
+│   │   │                       #   · RuntimeSection · SettingsSection
+│   │   └── Update/             # UpdateBanner.tsx
 │   ├── i18n/                   # index.ts + locales/{en,pt}.json
 │   ├── lib/                    # chatApi · configApi · documentsApi · runtimeApi · updateApi · theme
 │   ├── store/                  # chatStore · configStore · uiStore · runtimeStore · documentsStore · updateStore
 │   ├── styles/themes.css       # CSS variables por tema
-│   ├── App.tsx · main.tsx · types.ts · index.css
+│   ├── test/                   # setup.ts + doubles/ (Vitest)
+│   ├── assets/ · App.css
+│   ├── App.tsx · main.tsx · types.ts · index.css · vite-env.d.ts
 ├── src-tauri/                  # Backend Rust
 │   ├── src/
 │   │   ├── models/             # mod.rs (Chat/Message) · catalog.rs · memory_estimate.rs
@@ -38,13 +51,17 @@ chat-ia-local/
 │   │   ├── commands.rs · chat_commands.rs · config_commands.rs
 │   │   │   · document_commands.rs · runtime_commands.rs · update_commands.rs
 │   │   └── config.rs · db.rs · system_info.rs
-│   ├── resources/              # componentes vendorizados (gerado, gitignored)
+│   ├── resources/              # componentes vendorizados; só o `.gitkeep` é versionado
 │   ├── capabilities/default.json
 │   ├── icons/ · Cargo.toml · tauri.conf.json · build.rs
 ├── dist/                       # Build do Vite (gerado, gitignored)
 ├── public/ · index.html
-└── package.json · tsconfig.json · vite.config.ts · postcss.config.js
+├── CHANGELOG.md · cliff.toml · AGENTS.md · CLAUDE.md · README.md
+└── package.json · tsconfig.json · tsconfig.node.json · vite.config.ts
+    · vitest.config.ts · postcss.config.js
 ```
+
+> **`src-tauri/resources/` não é inteiramente gitignored.** O `.gitignore` ignora o **conteúdo** (`src-tauri/resources/*`) e versiona `!src-tauri/resources/.gitkeep`, porque `bundle.resources` nomeia a pasta e o `tauri-build` quebra o build inteiro quando ela não existe — foi o defeito do CI da AD-049.
 
 ## Module Organization
 
@@ -85,16 +102,33 @@ chat-ia-local/
 - Backend: `src-tauri/src/config.rs` + `config_commands.rs`
 - Bootstrap: `config.json` no `app_config_dir` do SO (**fora** da pasta-base — AD-012)
 
-**Conexões & Modelos (M3):**
-- UI: `src/components/Connections/*` + `Sidebar/ConnectionsSection.tsx`
-- Estado: `src/store/connectionsStore.ts` · API: `src/lib/connectionsApi.ts`
-- Backend: `connections.rs`, `connection_commands.rs`, `model_commands.rs`, `providers/`, `system_info.rs`
+> **Seção removida em 2026-07-28: "Conexões & Modelos (M3)".** Ela apontava para `src/components/Connections/*`, `Sidebar/ConnectionsSection.tsx`, `src/store/connectionsStore.ts`, `src/lib/connectionsApi.ts`, `connections.rs`, `connection_commands.rs` e `model_commands.rs` — **nenhum desses arquivos existe**. A feature saiu inteira no M9 (AD-039 planejou, AD-042 executou); o que ocupou o lugar dela é o Runtime embutido, abaixo. As tabelas `connections`/`model_configs` também caíram, pela `MIGRATION_7_SINGLE_RUNTIME`.
+
+**Runtime embutido & Modelos (M9):**
+- UI: `src/components/Runtime/*` + `Sidebar/RuntimeSection.tsx`
+- Estado: `src/store/runtimeStore.ts` · API: `src/lib/runtimeApi.ts`
+- Backend: `runtime_commands.rs`, `runtime/` (bundled · detect · download · job · log · model · process · store), `providers/`, `models/catalog.rs`, `system_info.rs`
+
+**Documentos & RAG (M5):**
+- UI: `src/components/Documents/*` + `Sidebar/DocumentsSection.tsx`
+- Estado: `src/store/documentsStore.ts` · API: `src/lib/documentsApi.ts`
+- Backend: `document_commands.rs`, `rag/` (chunking · embedding · onnxruntime · parsing · pdfium · pipeline · store)
+
+**Chat, anexos e memória (M4/M6):**
+- UI: `src/components/Chat/*`
+- Estado: `src/store/chatStore.ts` · API: `src/lib/chatApi.ts`
+- Backend: `chat_commands.rs`, `chat/` (attachments · cancellation · context_assembler · memory)
+
+**Atualização (M8):**
+- UI: `src/components/Update/UpdateBanner.tsx`
+- Estado: `src/store/updateStore.ts` · API: `src/lib/updateApi.ts`
+- Backend: `update_commands.rs`, `update/` (manifest · portable · signature) + `tauri-plugin-updater`
 
 ## Special Directories
 
 **Pasta-base do usuário** (escolhida no wizard, fora do repo — AD-008):
 **Purpose:** Todos os dados reais do usuário.
-**Conteúdo:** `localmind.db` (SQLite), `models/`, `documents/`, `vectors/`, `chats/` — criados por `config::ensure_folder_structure`.
+**Conteúdo:** `readme.db` (SQLite) mais as **5** subpastas de `config::SUBDIRS` — `models/`, `documents/`, `vectors/`, `chats/`, `runtime/` — criadas por `config::ensure_folder_structure` (conferido em `src-tauri/src/config.rs:126`).
 
 **`src-tauri/target/`** e **`dist/`**: build artifacts, ambos gitignored.
 

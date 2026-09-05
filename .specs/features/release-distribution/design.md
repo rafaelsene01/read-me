@@ -32,7 +32,7 @@ flowchart TB
         A3["*_portable.zip + .sig"]
         A4["latest.json"]
     end
-    subgraph APP["LocalMind em execução"]
+    subgraph APP["ReadMe em execução"]
         DET["update::flavor<br/>marcador .portable?"]
         OFF["tauri-plugin-updater<br/>(instalado)"]
         POR["update::portable<br/>download · verify · swap · relaunch"]
@@ -123,8 +123,8 @@ Ordem exata — as guardas vêm **antes** de qualquer escrita:
 Passo **manual, feito uma vez** pelo mantenedor (não dá para o CI gerar um segredo que ele mesmo precisa guardar):
 
 ```
-npx tauri signer generate -w ~/.tauri/localmind.key
-gh secret set TAURI_SIGNING_PRIVATE_KEY < ~/.tauri/localmind.key
+npx tauri signer generate -w ~/.tauri/readme.key
+gh secret set TAURI_SIGNING_PRIVATE_KEY < ~/.tauri/readme.key
 gh secret set TAURI_SIGNING_PRIVATE_KEY_PASSWORD
 ```
 
@@ -151,14 +151,14 @@ O parsing/serialização de versão semântica e a função de bump são **puras
 
 ### `mainBinaryName`
 
-Hoje o executável compilado é **`tauri-app.exe`** (nome do pacote Cargo), enquanto o `productName` é `LocalMind`. Para o zip portátil ter um nome apresentável e para o atualizador portátil saber qual arquivo trocar, `tauri.conf.json` passa a declarar `"mainBinaryName": "LocalMind"`. É uma mudança de config, sem impacto no código.
+Hoje o executável compilado é **`tauri-app.exe`** (nome do pacote Cargo), enquanto o `productName` é `ReadMe`. Para o zip portátil ter um nome apresentável e para o atualizador portátil saber qual arquivo trocar, `tauri.conf.json` passa a declarar `"mainBinaryName": "ReadMe"`. É uma mudança de config, sem impacto no código.
 
 ### Layout do `.zip` portátil (REL-12)
 
 ```
-LocalMind_<versão>_x64-portable.zip
-└── LocalMind/
-    ├── LocalMind.exe
+ReadMe_<versão>_x64-portable.zip
+└── ReadMe/
+    ├── ReadMe.exe
     ├── .portable          ← marcador vazio; é isto que define o modo
     └── README.txt         ← 3 linhas: descompacte, rode, os dados ficam em ./data
 ```
@@ -169,14 +169,14 @@ A pasta raiz única existe para o usuário não espalhar arquivos ao descompacta
 
 ### `scripts/make-portable.mjs`
 
-Monta a árvore acima a partir de `src-tauri/target/release/LocalMind.exe`, compacta e imprime o caminho do zip. Sem dependências externas de compressão: usa o `Compress-Archive`/`zip` do runner via `child_process`, ou a API nativa do Node, o que for mais direto no runner do Windows.
+Monta a árvore acima a partir de `src-tauri/target/release/ReadMe.exe`, compacta e imprime o caminho do zip. Sem dependências externas de compressão: usa o `Compress-Archive`/`zip` do runner via `child_process`, ou a API nativa do Node, o que for mais direto no runner do Windows.
 
 ### Alterações em `tauri.conf.json`
 
 ```jsonc
 {
   "version": "0.1.0",
-  "mainBinaryName": "LocalMind",
+  "mainBinaryName": "ReadMe",
   "bundle": {
     "createUpdaterArtifacts": true,     // gera os .sig e o latest.json
     "windows": {
@@ -186,7 +186,7 @@ Monta a árvore acima a partir de `src-tauri/target/release/LocalMind.exe`, comp
   "plugins": {
     "updater": {
       "pubkey": "<chave pública minisign>",
-      "endpoints": ["https://github.com/rafaelsene01/local-mind/releases/latest/download/latest.json"],
+      "endpoints": ["https://github.com/rafaelsene01/read-me/releases/latest/download/latest.json"],
       "windows": { "installMode": "passive" }
     }
   }
@@ -285,10 +285,10 @@ Produzido pelo `tauri-action` e completado pelo `finalize`:
   "notes": "...",
   "pub_date": "2026-07-26T12:00:00Z",
   "platforms": {
-    "windows-x86_64-nsis":     { "signature": "...", "url": "...LocalMind_0.1.2_x64-setup.exe" },
-    "windows-x86_64-msi":      { "signature": "...", "url": "...LocalMind_0.1.2_x64_en-US.msi" },
-    "linux-x86_64-appimage":   { "signature": "...", "url": "...LocalMind_0.1.2_amd64.AppImage" },
-    "windows-x86_64-portable": { "signature": "...", "url": "...LocalMind_0.1.2_x64-portable.zip" }
+    "windows-x86_64-nsis":     { "signature": "...", "url": "...ReadMe_0.1.2_x64-setup.exe" },
+    "windows-x86_64-msi":      { "signature": "...", "url": "...ReadMe_0.1.2_x64_en-US.msi" },
+    "linux-x86_64-appimage":   { "signature": "...", "url": "...ReadMe_0.1.2_amd64.AppImage" },
+    "windows-x86_64-portable": { "signature": "...", "url": "...ReadMe_0.1.2_x64-portable.zip" }
   }
 }
 ```
@@ -307,11 +307,11 @@ O ponto delicado é que **no Windows não se sobrescreve um `.exe` em execução
    ├─ inválida → aborta, apaga o temp, versão atual intacta (REL-21)
    └─ válida → segue
 5. Extrai para <app_dir>/.update/ (descartando o primeiro componente do caminho)
-6. Renomeia LocalMind.exe → LocalMind.exe.old          ← permitido com o processo vivo
+6. Renomeia ReadMe.exe → ReadMe.exe.old          ← permitido com o processo vivo
 7. Move .update/* para <app_dir>/
    └─ falhou? renomeia .old de volta e aborta          ← rollback
 8. Apaga .update/ e o temp
-9. Spawna <app_dir>/LocalMind.exe e chama app.exit(0)
+9. Spawna <app_dir>/ReadMe.exe e chama app.exit(0)
 10. No boot seguinte, cleanup() apaga qualquer *.old
 ```
 
@@ -396,4 +396,4 @@ Segundo a matriz de `.specs/codebase/TESTING.md`:
 1. **`tauri-action` + `--bundles`**: confirmar a flag exata da versão corrente da action ao escrever o workflow (a superfície de `args` mudou entre releases da action).
 2. **Chave `-portable` no `latest.json`**: confirmar rodando que o `tauri-plugin-updater` ignora chaves desconhecidas em vez de falhar o parse. Se falhar, o plano B é um `portable.json` separado — muda uma linha do `finalize` e uma URL no `manifest.rs`.
 3. **`Cargo.lock` após o bump**: confirmar qual comando atualiza a versão do pacote no lock sem tocar em mais nada (`cargo check` costuma bastar; se não, `cargo update -p tauri-app`).
-4. **Nome exato dos artefatos** gerados pelo Tauri 2 nesta versão (`LocalMind_0.1.2_x64-setup.exe` vs `LocalMind_0.1.2_x64_en-US.msi`) — o `patch-latest-json.mjs` deve **ler os nomes do release**, não presumi-los.
+4. **Nome exato dos artefatos** gerados pelo Tauri 2 nesta versão (`ReadMe_0.1.2_x64-setup.exe` vs `ReadMe_0.1.2_x64_en-US.msi`) — o `patch-latest-json.mjs` deve **ler os nomes do release**, não presumi-los.

@@ -46,7 +46,7 @@ Confirmado por documentação oficial e pela CLI local — **não** deduzido:
 ### Fatos do repositório verificados nesta sessão
 
 - `.github/` **não existe**; remote é `git@github.com:rafaelsene01/agent-local.git` (**renomeado para `local-mind` em 2026-07-26** — o endpoint do updater acompanhou); única branch `master`; **nenhuma tag**.
-- O binário compilado hoje se chama **`tauri-app.exe`** (nome do pacote Cargo), não `LocalMind.exe` — o `productName` é `LocalMind` mas `mainBinaryName` não está configurado. Isso afeta diretamente o nome do executável dentro do zip portátil.
+- O binário compilado hoje se chama **`tauri-app.exe`** (nome do pacote Cargo), não `ReadMe.exe` — o `productName` é `ReadMe` mas `mainBinaryName` não está configurado. Isso afeta diretamente o nome do executável dentro do zip portátil.
 - `src-tauri/target/release/tauri-app.exe` tem **226 MB**. O zip portátil e os instaladores vão herdar essa ordem de grandeza.
 - `tauri.conf.json` **não tem** `plugins.updater`, **não tem** `bundle.createUpdaterArtifacts` e usa `bundle.targets: "all"`.
 - `capabilities/default.json` tem só `core:default`, `opener:default`, `dialog:default` — falta a permissão do updater.
@@ -109,7 +109,7 @@ Confirmado por documentação oficial e pela CLI local — **não** deduzido:
 4. WHEN o app roda a partir de uma instalação normal THEN o comportamento de armazenamento SHALL permanecer exatamente o de hoje (AD-008/AD-012), sem regressão
 5. WHEN o app é iniciado a partir do zip descompactado em qualquer pasta gravável pelo usuário THEN ele SHALL abrir e completar o wizard de 1º uso sem nenhum prompt de elevação
 
-**Independent Test**: Descompactar o zip em `C:\Users\<user>\Desktop\LocalMind`, rodar, completar o wizard, e confirmar que a pasta de dados nasceu dentro dessa mesma pasta e que nada foi escrito em `%APPDATA%`.
+**Independent Test**: Descompactar o zip em `C:\Users\<user>\Desktop\ReadMe`, rodar, completar o wizard, e confirmar que a pasta de dados nasceu dentro dessa mesma pasta e que nada foi escrito em `%APPDATA%`.
 
 ---
 

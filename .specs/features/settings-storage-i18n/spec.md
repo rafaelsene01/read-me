@@ -19,7 +19,7 @@ Antes de baixar modelos ou indexar documentos, o app precisa saber **onde** guar
 | Config durante a instalação (NSIS/MSI) | AD-010 — substituído pelo wizard de 1º uso; deferido |
 | Download/gestão de modelos na pasta `models/` | M3 |
 | Ingestão de documentos na pasta `documents/` | M5 |
-| Migração automática de dados ao trocar de pasta com conteúdo existente | v1 só move o `localmind.db`; migração completa é edge futura |
+| Migração automática de dados ao trocar de pasta com conteúdo existente | v1 só move o `readme.db`; migração completa é edge futura |
 
 ---
 
@@ -34,7 +34,7 @@ Antes de baixar modelos ou indexar documentos, o app precisa saber **onde** guar
 **Acceptance Criteria**:
 
 1. WHEN o usuário escolhe uma pasta-base THEN o sistema SHALL criar a estrutura `models/`, `documents/`, `vectors/`, `chats/` dentro dela
-2. WHEN a pasta-base é definida THEN o sistema SHALL guardar o `localmind.db` nela e persistir o caminho escolhido
+2. WHEN a pasta-base é definida THEN o sistema SHALL guardar o `readme.db` nela e persistir o caminho escolhido
 3. WHEN a pasta escolhida não existe ou é inválida/sem permissão de escrita THEN o sistema SHALL exibir erro e manter a pasta anterior
 4. WHEN o app reinicia THEN o sistema SHALL reabrir usando a pasta-base persistida
 
@@ -112,7 +112,7 @@ Antes de baixar modelos ou indexar documentos, o app precisa saber **onde** guar
 
 - WHEN a pasta-base persistida sumiu/foi movida entre sessões THEN o sistema SHALL avisar e reabrir o wizard ou pedir nova pasta
 - WHEN o usuário escolhe uma pasta sem permissão de escrita THEN o sistema SHALL bloquear e explicar
-- WHEN o usuário troca para uma pasta nova THEN o sistema SHALL criar a estrutura lá e mover o `localmind.db` (dados de chat permanecem); documentos/modelos antigos NÃO são migrados automaticamente no v1 (avisar)
+- WHEN o usuário troca para uma pasta nova THEN o sistema SHALL criar a estrutura lá e mover o `readme.db` (dados de chat permanecem); documentos/modelos antigos NÃO são migrados automaticamente no v1 (avisar)
 - WHEN o arquivo de config está corrompido THEN o sistema SHALL cair nos defaults e reabrir o wizard sem travar
 
 ---
@@ -141,6 +141,6 @@ Antes de baixar modelos ou indexar documentos, o app precisa saber **onde** guar
 ## Success Criteria
 
 - [ ] 1ª abertura mostra o wizard; escolhas persistem e o wizard não reaparece
-- [ ] Pasta-base escolhida contém `models/`, `documents/`, `vectors/`, `chats/` e o `localmind.db`
+- [ ] Pasta-base escolhida contém `models/`, `documents/`, `vectors/`, `chats/` e o `readme.db`
 - [ ] Alternar idioma (EN↔PT) e tema (claro/escuro/extra) reflete na hora e sobrevive a reinício
 - [ ] Toda string visível da UI passa pela camada i18n (sem texto hardcoded)
