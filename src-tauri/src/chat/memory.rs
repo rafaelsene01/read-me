@@ -336,7 +336,7 @@ mod tests {
     async fn re_indexing_a_turn_replaces_it_instead_of_duplicating_it() {
         use crate::rag::embedding::EMBEDDING_DIM;
 
-        let dir = std::env::temp_dir().join(format!("localmind-memory-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("readme-memory-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         let store = VectorStore::open(&dir).await.unwrap();
 
@@ -380,7 +380,7 @@ mod tests {
     async fn one_conversation_never_recalls_another_and_deleting_it_spares_the_rest() {
         use crate::rag::embedding::EMBEDDING_DIM;
 
-        let dir = std::env::temp_dir().join(format!("localmind-isolation-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("readme-isolation-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         let store = VectorStore::open(&dir).await.unwrap();
 
@@ -465,8 +465,8 @@ mod tests {
 /// them would otherwise point at the user's own model folder:
 ///
 /// ```text
-/// LOCALMIND_EMBED_CACHE=<copy of models--intfloat--multilingual-e5-small's parent>
-/// LOCALMIND_ORT_DYLIB=<path to onnxruntime.dll>
+/// README_EMBED_CACHE=<copy of models--intfloat--multilingual-e5-small's parent>
+/// README_ORT_DYLIB=<path to onnxruntime.dll>
 /// cargo test --lib chat::memory_quality -- --ignored --nocapture
 /// ```
 #[cfg(test)]
@@ -482,13 +482,13 @@ mod memory_quality {
     }
 
     #[test]
-    #[ignore = "needs LOCALMIND_EMBED_CACHE and LOCALMIND_ORT_DYLIB on a machine with the model"]
+    #[ignore = "needs README_EMBED_CACHE and README_ORT_DYLIB on a machine with the model"]
     fn a_labelled_turn_is_retrievable_by_what_was_said_in_it() {
-        let Ok(cache) = std::env::var("LOCALMIND_EMBED_CACHE") else {
-            panic!("set LOCALMIND_EMBED_CACHE to a *copy* of the model cache");
+        let Ok(cache) = std::env::var("README_EMBED_CACHE") else {
+            panic!("set README_EMBED_CACHE to a *copy* of the model cache");
         };
-        let Ok(dylib) = std::env::var("LOCALMIND_ORT_DYLIB") else {
-            panic!("set LOCALMIND_ORT_DYLIB to the onnxruntime shared library");
+        let Ok(dylib) = std::env::var("README_ORT_DYLIB") else {
+            panic!("set README_ORT_DYLIB to the onnxruntime shared library");
         };
         std::env::set_var("ORT_DYLIB_PATH", &dylib);
         embedding::set_cache_dir(std::path::PathBuf::from(cache));
@@ -629,13 +629,13 @@ mod memory_quality {
     /// cause is real, not a story), and that the planted turn is nonetheless
     /// within `MEMORY_CANDIDATES` (the fix is sufficient).
     #[test]
-    #[ignore = "needs LOCALMIND_EMBED_CACHE and LOCALMIND_ORT_DYLIB on a machine with the model"]
+    #[ignore = "needs README_EMBED_CACHE and README_ORT_DYLIB on a machine with the model"]
     fn a_rephrased_question_still_reaches_the_turn_it_is_asking_about() {
-        let Ok(cache) = std::env::var("LOCALMIND_EMBED_CACHE") else {
-            panic!("set LOCALMIND_EMBED_CACHE to a *copy* of the model cache");
+        let Ok(cache) = std::env::var("README_EMBED_CACHE") else {
+            panic!("set README_EMBED_CACHE to a *copy* of the model cache");
         };
-        let Ok(dylib) = std::env::var("LOCALMIND_ORT_DYLIB") else {
-            panic!("set LOCALMIND_ORT_DYLIB to the onnxruntime shared library");
+        let Ok(dylib) = std::env::var("README_ORT_DYLIB") else {
+            panic!("set README_ORT_DYLIB to the onnxruntime shared library");
         };
         std::env::set_var("ORT_DYLIB_PATH", &dylib);
         embedding::set_cache_dir(std::path::PathBuf::from(cache));

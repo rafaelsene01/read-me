@@ -55,9 +55,9 @@ test("setJsonVersion updates the root version", () => {
 
 test("setJsonVersion also updates the lockfile root package entry", () => {
   const source = JSON.stringify({
-    name: "localmind",
+    name: "readme",
     version: "0.1.0",
-    packages: { "": { name: "localmind", version: "0.1.0" }, "node_modules/react": { version: "19.1.0" } },
+    packages: { "": { name: "readme", version: "0.1.0" }, "node_modules/react": { version: "19.1.0" } },
   });
   const out = JSON.parse(setJsonVersion(source, "1.0.0"));
   assert.equal(out.version, "1.0.0");

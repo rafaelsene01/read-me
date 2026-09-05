@@ -137,7 +137,7 @@ mod tests {
 
     #[test]
     fn flavor_follows_the_marker_file() {
-        let dir = std::env::temp_dir().join(format!("localmind-flavor-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("readme-flavor-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
 
         assert_eq!(flavor_at(Some(&dir)), InstallFlavor::Installed);

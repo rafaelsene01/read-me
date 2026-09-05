@@ -336,7 +336,7 @@ mod tests {
     #[tokio::test]
     #[ignore = "writes a real LanceDB table to a temp folder"]
     async fn chunk_at_fetches_the_neighbour_by_position() {
-        let dir = std::env::temp_dir().join(format!("localmind-neighbour-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("readme-neighbour-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         let store = VectorStore::open(&dir).await.unwrap();
 
@@ -380,7 +380,7 @@ mod tests {
     #[tokio::test]
     #[ignore = "touches the filesystem"]
     async fn chunk_at_on_an_empty_store_is_none() {
-        let dir = std::env::temp_dir().join(format!("localmind-neighbour-empty-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("readme-neighbour-empty-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         let store = VectorStore::open(&dir).await.unwrap();
 
@@ -393,7 +393,7 @@ mod tests {
     #[tokio::test]
     #[ignore = "writes a real LanceDB table to a temp folder"]
     async fn namespaces_are_isolated_and_deletes_remove_only_their_rows() {
-        let dir = std::env::temp_dir().join(format!("localmind-store-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("readme-store-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         let store = VectorStore::open(&dir).await.unwrap();
 
@@ -441,7 +441,7 @@ mod tests {
     #[tokio::test]
     #[ignore = "touches the filesystem"]
     async fn searching_an_empty_store_returns_nothing_instead_of_failing() {
-        let dir = std::env::temp_dir().join(format!("localmind-empty-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("readme-empty-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         let store = VectorStore::open(&dir).await.unwrap();
 

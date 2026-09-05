@@ -15,7 +15,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
 
 /** One `dpkg -c` line, e.g.
- *  `-rwxr-xr-x root/root  1234 2026-07-27 10:00 ./usr/lib/LocalMind/resources/llama/vulkan/llama-server` */
+ *  `-rwxr-xr-x root/root  1234 2026-07-27 10:00 ./usr/lib/ReadMe/resources/llama/vulkan/llama-server` */
 export function parseDpkgLine(line) {
   const match = line.trim().match(/^(\S{10})\s+\S+\s+(\d+)\s+\S+\s+\S+\s+(\.\/\S+)/);
   if (!match) return null;

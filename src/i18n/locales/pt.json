@@ -1,6 +1,6 @@
 {
   "app": {
-    "name": "LocalMind"
+    "name": "ReadMe"
   },
   "sidebar": {
     "chats": "Chats",
@@ -73,7 +73,7 @@
     },
     "engine": {
       "title": "Runtime embutido (llama.cpp)",
-      "description": "Vem dentro do LocalMind — não há mais nada para instalar.",
+      "description": "Vem dentro do ReadMe — não há mais nada para instalar.",
       "notPrepared": "Ainda não preparado. Preparar escolhe a versão que roda nesta máquina.",
       "prepare": "Preparar runtime",
       "preparing": "Preparando o runtime…",
@@ -158,9 +158,9 @@
     "languagePortuguese": "Português"
   },
   "onboarding": {
-    "welcomeTitle": "Bem-vindo ao LocalMind",
+    "welcomeTitle": "Bem-vindo ao ReadMe",
     "welcomeSubtitle": "Um chat de IA privado e 100% local. Vamos configurar algumas coisas.",
-    "folderLabel": "Onde o LocalMind deve guardar seus modelos, documentos e chats?",
+    "folderLabel": "Onde o ReadMe deve guardar seus modelos, documentos e chats?",
     "folderChoose": "Escolher pasta",
     "folderUseDefault": "Usar pasta sugerida",
     "themeLabel": "Escolha um tema",
@@ -168,7 +168,7 @@
     "finish": "Começar",
     "settingUp": "Configurando...",
     "storageLostTitle": "Pasta de armazenamento não encontrada",
-    "storageLostSubtitle": "Confirme onde o LocalMind deve guardar seus dados para continuar.",
+    "storageLostSubtitle": "Confirme onde o ReadMe deve guardar seus dados para continuar.",
     "storageLostWarning": "A pasta {{path}} não está mais disponível. Se ela estiver num drive removível, conecte-o de volta e escolha a mesma pasta; caso contrário, escolha outra. Os dados que estavam nela não são recuperados por esta etapa."
   }
 }

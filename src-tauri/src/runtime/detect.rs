@@ -114,16 +114,16 @@ mod tests {
 /// back to CPU **silently** — the worst possible outcome of hiding the window.
 ///
 /// Run with:
-///   set LOCALMIND_LLAMA_SERVER=<path to llama-server.exe> && cargo test detect_real -- --ignored --nocapture
+///   set README_LLAMA_SERVER=<path to llama-server.exe> && cargo test detect_real -- --ignored --nocapture
 #[cfg(test)]
 mod detect_real {
     use super::*;
 
     #[test]
-    #[ignore = "needs LOCALMIND_LLAMA_SERVER pointing at a real binary"]
+    #[ignore = "needs README_LLAMA_SERVER pointing at a real binary"]
     fn hiding_the_console_does_not_hide_the_device_list() {
-        let Ok(path) = std::env::var("LOCALMIND_LLAMA_SERVER") else {
-            panic!("set LOCALMIND_LLAMA_SERVER to a real llama-server binary");
+        let Ok(path) = std::env::var("README_LLAMA_SERVER") else {
+            panic!("set README_LLAMA_SERVER to a real llama-server binary");
         };
 
         let probe = probe_devices(Path::new(&path));

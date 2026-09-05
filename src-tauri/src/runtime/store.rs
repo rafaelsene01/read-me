@@ -206,7 +206,7 @@ mod tests {
 
     /// Creates a real file, because `active_model` deliberately checks the disk.
     fn a_model_file(name: &str) -> std::path::PathBuf {
-        let dir = std::env::temp_dir().join(format!("localmind-active-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("readme-active-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join(name);
         std::fs::write(&path, b"gguf").unwrap();

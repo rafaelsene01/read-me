@@ -36,7 +36,7 @@ mod tests {
     /// the resolved path, since nothing else points it at the library.
     #[test]
     fn the_resolved_library_is_what_ort_will_load() {
-        let path = std::env::temp_dir().join("localmind-ort-probe.dll");
+        let path = std::env::temp_dir().join("readme-ort-probe.dll");
         set_dylib_path(&path);
         assert_eq!(
             std::env::var("ORT_DYLIB_PATH").unwrap(),

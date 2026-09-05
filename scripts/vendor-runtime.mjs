@@ -38,7 +38,7 @@ export const LAYOUT = {
 export function hostPlatform(platform = process.platform) {
   if (platform === "win32" || platform === "linux") return platform;
   throw new Error(
-    `unsupported platform: ${platform} — LocalMind ships for Windows and Linux only`,
+    `unsupported platform: ${platform} — ReadMe ships for Windows and Linux only`,
   );
 }
 

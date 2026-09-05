@@ -240,7 +240,7 @@ mod tests {
     }
 
     fn temp_db() -> std::path::PathBuf {
-        let dir = std::env::temp_dir().join(format!("localmind-db-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("readme-db-{}", std::process::id()));
         let _ = std::fs::create_dir_all(&dir);
         dir.join(format!("{}.db", uuid::Uuid::new_v4()))
     }
@@ -502,7 +502,7 @@ mod tests {
 /// Dry run of the upgrade against a copy of a real database.
 ///
 /// Run with:
-///   set LOCALMIND_REAL_DB=<path to a COPY> && cargo test real_database -- --ignored --nocapture
+///   set README_REAL_DB=<path to a COPY> && cargo test real_database -- --ignored --nocapture
 ///
 /// Deliberately takes the path from the environment and never guesses one: this
 /// must never be pointed at a database someone is actually using.
@@ -511,10 +511,10 @@ mod real_database {
     use super::*;
 
     #[test]
-    #[ignore = "needs LOCALMIND_REAL_DB pointing at a copy"]
+    #[ignore = "needs README_REAL_DB pointing at a copy"]
     fn a_copy_of_the_real_database_upgrades_without_losing_rows() {
-        let Ok(path) = std::env::var("LOCALMIND_REAL_DB") else {
-            panic!("set LOCALMIND_REAL_DB to a COPY of the database");
+        let Ok(path) = std::env::var("README_REAL_DB") else {
+            panic!("set README_REAL_DB to a COPY of the database");
         };
         let file = std::path::PathBuf::from(&path);
 

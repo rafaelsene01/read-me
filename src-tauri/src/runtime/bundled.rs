@@ -37,7 +37,7 @@ pub fn find_file(dir: &Path, name: &str) -> Option<PathBuf> {
 /// report) tell "the installer is incomplete" from "the app is confused".
 fn missing(what: &str, dir: &Path) -> String {
     format!(
-        "componente '{what}' não encontrado em {} — reinstale o LocalMind",
+        "componente '{what}' não encontrado em {} — reinstale o ReadMe",
         dir.display()
     )
 }
@@ -94,7 +94,7 @@ pub fn ensure_executable(path: &Path, _fallback_dir: &Path) -> Result<PathBuf, S
 /// Whether `bundle.resources` preserves the execute bit inside a `.deb` or an
 /// AppImage is not documented anywhere we could find, so this does not depend
 /// on the answer: it sets the bit, and if the packaged location is read-only
-/// (`/usr/lib/LocalMind` belongs to root) it copies the backend folder into the
+/// (`/usr/lib/ReadMe` belongs to root) it copies the backend folder into the
 /// user's base folder and marks it there.
 ///
 /// The whole folder is copied, not just the executable: `llama-server` loads
@@ -179,7 +179,7 @@ mod tests {
     use super::*;
 
     fn temp_dir(tag: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("localmind-bundled-{tag}-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("readme-bundled-{tag}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         dir
@@ -210,9 +210,9 @@ mod tests {
     /// must never suggest downloading it — that path no longer exists.
     #[test]
     fn the_missing_component_message_names_the_file_and_the_folder() {
-        let message = missing("llama-server.exe", Path::new("/opt/LocalMind/resources/llama/vulkan"));
+        let message = missing("llama-server.exe", Path::new("/opt/ReadMe/resources/llama/vulkan"));
         assert!(message.contains("llama-server.exe"));
-        assert!(message.contains("/opt/LocalMind/resources/llama/vulkan"));
+        assert!(message.contains("/opt/ReadMe/resources/llama/vulkan"));
         assert!(message.contains("reinstale"));
         assert!(
             !message.to_lowercase().contains("baix"),

@@ -16,11 +16,11 @@ export function normalizeTheme(raw: string | null | undefined): Theme {
 }
 
 export function cachedTheme(): Theme {
-  return normalizeTheme(localStorage.getItem("localmind-theme"));
+  return normalizeTheme(localStorage.getItem("readme-theme"));
 }
 
 export function applyTheme(theme: string) {
   const normalized = normalizeTheme(theme);
   document.documentElement.setAttribute("data-theme", normalized);
-  localStorage.setItem("localmind-theme", normalized);
+  localStorage.setItem("readme-theme", normalized);
 }

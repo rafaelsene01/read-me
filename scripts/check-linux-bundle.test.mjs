@@ -5,11 +5,11 @@ import { findEntries, parseDpkgLine } from "./check-linux-bundle.mjs";
 
 /// Real `dpkg -c` output shape, captured from a Tauri .deb listing.
 const LISTING = [
-  "drwxr-xr-x root/root         0 2026-07-27 10:00 ./usr/lib/LocalMind/resources/llama/vulkan/",
-  "-rwxr-xr-x root/root   5242880 2026-07-27 10:00 ./usr/lib/LocalMind/resources/llama/vulkan/llama-server",
-  "-rw-r--r-- root/root   5242880 2026-07-27 10:00 ./usr/lib/LocalMind/resources/llama/cpu/llama-server",
-  "-rwxr-xr-x root/root  15809848 2026-07-27 10:00 ./usr/lib/LocalMind/resources/onnxruntime/lib/libonnxruntime.so",
-  "-rw-r--r-- root/root       412 2026-07-27 10:00 ./usr/share/applications/LocalMind.desktop",
+  "drwxr-xr-x root/root         0 2026-07-27 10:00 ./usr/lib/ReadMe/resources/llama/vulkan/",
+  "-rwxr-xr-x root/root   5242880 2026-07-27 10:00 ./usr/lib/ReadMe/resources/llama/vulkan/llama-server",
+  "-rw-r--r-- root/root   5242880 2026-07-27 10:00 ./usr/lib/ReadMe/resources/llama/cpu/llama-server",
+  "-rwxr-xr-x root/root  15809848 2026-07-27 10:00 ./usr/lib/ReadMe/resources/onnxruntime/lib/libonnxruntime.so",
+  "-rw-r--r-- root/root       412 2026-07-27 10:00 ./usr/share/applications/ReadMe.desktop",
 ].join("\n");
 
 test("a mode with x is read as executable and one without is not", () => {

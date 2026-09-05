@@ -121,7 +121,7 @@ mod tests {
     /// Guards the key that actually ships.
     ///
     /// `tauri signer generate` writes two files whose base64 blobs look alike,
-    /// and pasting `localmind.key` instead of `localmind.key.pub` puts the
+    /// and pasting `readme.key` instead of `readme.key.pub` puts the
     /// **private** key in a committed file — it happened once. The plugin only
     /// notices at `app.updater()` time, in front of a user. This notices at
     /// `cargo test` time.

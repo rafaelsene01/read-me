@@ -16,7 +16,7 @@ import { fileURLToPath } from "node:url";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 
-export const APP_NAME = "LocalMind";
+export const APP_NAME = "ReadMe";
 /** Read by `update::flavor()` in the Rust backend. Keep both sides in sync. */
 export const PORTABLE_MARKER = ".portable";
 

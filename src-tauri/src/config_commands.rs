@@ -82,7 +82,7 @@ pub fn update_language(app: AppHandle, language: String) -> Result<AppConfig, St
     Ok(cfg)
 }
 
-/// Moves only `localmind.db` to the new folder (chats/messages). Documents,
+/// Moves only `readme.db` to the new folder (chats/messages). Documents,
 /// models and vectors already on disk under the old base_path are NOT moved
 /// automatically in v1 — see .specs/features/settings-storage-i18n/spec.md
 /// edge cases.

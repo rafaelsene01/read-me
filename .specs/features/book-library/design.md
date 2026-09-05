@@ -7,7 +7,7 @@
 
 ## Pré-condição que não é detalhe
 
-Na sessão em que este design foi escrito, `src/`, `src-tauri/`, `scripts/` e `public/` estavam **apagados no working tree** (124 arquivos em `D` no `git status`), presentes no `HEAD`. Todo este design foi lido contra o `HEAD` (`git show HEAD:<arquivo>`). **A árvore precisa ser restaurada antes da primeira task** — ou a decisão de não restaurá-la precisa ser tomada e registrada, porque nesse caso este design não se aplica.
+Na sessão em que este design foi escrito, `src/`, `src-tauri/`, `scripts/` e `public/` estavam **apagados no working tree** (124 arquivos em `D`), presentes só no `HEAD`. Todo este design foi lido contra o `HEAD` (`git show HEAD:<arquivo>`). A deleção chegou a ser commitada em `9afb29a` e empurrada; os arquivos foram **restaurados de `674b1c6` em 2026-09-04**, já com o rename `local-mind`→`read-me` aplicado a eles (eles tinham ficado de fora da primeira passada, por estarem apagados na hora). O design vale para a árvore restaurada.
 
 Além disso: o `AGENTS.md` afirma que `src/types.ts` é gerado desde 2026-07-28 pela feature `generated-types`, e que o frontend tem 63 testes pela `frontend-testing`. **Nenhuma das duas está no `HEAD`** — não há `src-tauri/src/types_export.rs`, e o `package.json` do `HEAD` não tem script `test`. As duas pastas de spec (`generated-types/`, `frontend-testing/`) estão untracked. A T1 confere isso e decide.
 

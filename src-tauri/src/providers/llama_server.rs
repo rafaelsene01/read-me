@@ -159,7 +159,7 @@ mod tests {
 
     #[test]
     fn installed_models_are_the_gguf_files_with_their_sizes() {
-        let dir = std::env::temp_dir().join(format!("localmind-llama-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("readme-llama-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join("Phi-3.5-mini-instruct-Q4_K_M.gguf"), vec![0u8; 2048]).unwrap();
@@ -179,7 +179,7 @@ mod tests {
 
     #[test]
     fn a_missing_models_folder_lists_nothing_instead_of_failing() {
-        let dir = std::env::temp_dir().join("localmind-llama-does-not-exist");
+        let dir = std::env::temp_dir().join("readme-llama-does-not-exist");
         let _ = std::fs::remove_dir_all(&dir);
         assert!(installed_from_disk(&dir).is_empty());
     }

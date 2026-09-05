@@ -1,9 +1,9 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "LocalMind",
-  "mainBinaryName": "LocalMind",
+  "productName": "ReadMe",
+  "mainBinaryName": "ReadMe",
   "version": "../package.json",
-  "identifier": "com.localmind.app",
+  "identifier": "com.readme.app",
   "build": {
     "beforeDevCommand": "npm run vendor && npm run dev",
     "devUrl": "http://localhost:1420",
@@ -13,7 +13,7 @@
   "app": {
     "windows": [
       {
-        "title": "LocalMind",
+        "title": "ReadMe",
         "width": 1280,
         "height": 800,
         "minWidth": 960,
@@ -53,7 +53,7 @@
     "updater": {
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEU5NEQxNEJFNjFGMDFBQjgKUldTNEd2Qmh2aFJONmJSUEt1eUhuQXpKM2R5U1M3OU44Yk1aQjVJVnlBVCtsUEIxdkVXeENjMG0K",
       "endpoints": [
-        "https://github.com/rafaelsene01/local-mind/releases/latest/download/latest.json"
+        "https://github.com/rafaelsene01/read-me/releases/latest/download/latest.json"
       ],
       "windows": {
         "installMode": "passive"

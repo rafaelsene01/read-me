@@ -33,11 +33,11 @@ pub struct DownloadProgress {
 /// Refuses before downloading hundreds of megabytes we could never install:
 /// a portable copy on a write-protected stick, or dropped into `Program Files`.
 pub fn ensure_writable(dir: &Path) -> Result<(), String> {
-    let probe = dir.join(".localmind-update-test");
+    let probe = dir.join(".readme-update-test");
     fs::write(&probe, b"ok").map_err(|_| {
         format!(
             "não é possível atualizar a partir de '{}': a pasta não permite escrita. \
-             Mova o LocalMind para uma pasta sua (Documentos, Desktop) e tente de novo.",
+             Mova o ReadMe para uma pasta sua (Documentos, Desktop) e tente de novo.",
             dir.display()
         )
     })?;
@@ -45,7 +45,7 @@ pub fn ensure_writable(dir: &Path) -> Result<(), String> {
     Ok(())
 }
 
-/// The archive wraps everything in a single `LocalMind/` folder so unzipping it
+/// The archive wraps everything in a single `ReadMe/` folder so unzipping it
 /// by hand does not scatter files; installing it means dropping that wrapper.
 pub fn strip_first_component(path: &str) -> Option<String> {
     let normalized = path.replace('\\', "/");
@@ -107,7 +107,7 @@ pub async fn install(
     let exe_name = current_exe_name()
         .ok_or_else(|| "não foi possível localizar o executável atual".to_string())?;
 
-    let temp = std::env::temp_dir().join(format!("localmind-update-{}", std::process::id()));
+    let temp = std::env::temp_dir().join(format!("readme-update-{}", std::process::id()));
     let _ = fs::remove_dir_all(&temp);
     fs::create_dir_all(&temp).map_err(|e| format!("erro de arquivo: {e}"))?;
 
@@ -267,7 +267,7 @@ mod tests {
     use super::*;
 
     fn temp_dir(name: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("localmind-update-{name}-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("readme-update-{name}-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
         dir
@@ -276,24 +276,24 @@ mod tests {
     #[test]
     fn strips_the_wrapper_directory() {
         assert_eq!(
-            strip_first_component("LocalMind/LocalMind.exe").as_deref(),
-            Some("LocalMind.exe")
+            strip_first_component("ReadMe/ReadMe.exe").as_deref(),
+            Some("ReadMe.exe")
         );
         assert_eq!(
-            strip_first_component("LocalMind/sub/dir/file.txt").as_deref(),
+            strip_first_component("ReadMe/sub/dir/file.txt").as_deref(),
             Some("sub/dir/file.txt")
         );
         // Zip files written on Windows can carry backslashes.
         assert_eq!(
-            strip_first_component("LocalMind\\.portable").as_deref(),
+            strip_first_component("ReadMe\\.portable").as_deref(),
             Some(".portable")
         );
     }
 
     #[test]
     fn the_wrapper_entry_itself_has_nothing_left() {
-        assert_eq!(strip_first_component("LocalMind/"), None);
-        assert_eq!(strip_first_component("LocalMind"), None);
+        assert_eq!(strip_first_component("ReadMe/"), None);
+        assert_eq!(strip_first_component("ReadMe"), None);
         assert_eq!(strip_first_component(""), None);
     }
 
@@ -303,15 +303,15 @@ mod tests {
         assert!(!is_safe_relative("sub/../../evil.exe"));
         assert!(!is_safe_relative("C:/Windows/evil.exe"));
         assert!(!is_safe_relative(""));
-        assert!(is_safe_relative("LocalMind.exe"));
+        assert!(is_safe_relative("ReadMe.exe"));
         assert!(is_safe_relative("sub/dir/file.txt"));
     }
 
     #[test]
     fn cleanup_removes_leftovers_and_leaves_the_app_alone() {
         let dir = temp_dir("cleanup");
-        fs::write(dir.join("LocalMind.exe"), b"new").unwrap();
-        fs::write(dir.join("LocalMind.exe.old"), b"old").unwrap();
+        fs::write(dir.join("ReadMe.exe"), b"new").unwrap();
+        fs::write(dir.join("ReadMe.exe.old"), b"old").unwrap();
         fs::write(dir.join("README.txt"), b"keep").unwrap();
         // The portable folder belongs to the user, who may keep their own
         // files in it. Only our retired executable is ours to delete.
@@ -319,12 +319,12 @@ mod tests {
         fs::create_dir_all(dir.join(STAGING_DIR)).unwrap();
         fs::write(dir.join(STAGING_DIR).join("leftover"), b"x").unwrap();
 
-        cleanup_retired(&dir, std::ffi::OsStr::new("LocalMind.exe"));
+        cleanup_retired(&dir, std::ffi::OsStr::new("ReadMe.exe"));
 
-        assert!(dir.join("LocalMind.exe").exists());
+        assert!(dir.join("ReadMe.exe").exists());
         assert!(dir.join("README.txt").exists());
         assert!(dir.join("notas.old").exists(), "someone else's .old is not ours");
-        assert!(!dir.join("LocalMind.exe.old").exists());
+        assert!(!dir.join("ReadMe.exe.old").exists());
         assert!(!dir.join(STAGING_DIR).exists());
 
         let _ = fs::remove_dir_all(&dir);
@@ -335,7 +335,7 @@ mod tests {
         cleanup_old_files(Path::new("/definitely/not/a/real/path"));
         cleanup_retired(
             Path::new("/definitely/not/a/real/path"),
-            std::ffi::OsStr::new("LocalMind.exe"),
+            std::ffi::OsStr::new("ReadMe.exe"),
         );
     }
 
@@ -346,19 +346,19 @@ mod tests {
         let staging = root.join("staging");
         fs::create_dir_all(&app_dir).unwrap();
         fs::create_dir_all(&staging).unwrap();
-        fs::write(app_dir.join("LocalMind.exe"), b"live").unwrap();
+        fs::write(app_dir.join("ReadMe.exe"), b"live").unwrap();
         // A bundle with everything except the one file that matters.
         fs::write(staging.join("README.txt"), b"new readme").unwrap();
 
-        let err = swap(&app_dir, &staging, std::ffi::OsStr::new("LocalMind.exe")).unwrap_err();
+        let err = swap(&app_dir, &staging, std::ffi::OsStr::new("ReadMe.exe")).unwrap_err();
 
         assert!(err.contains("não contém"), "unexpected: {err}");
         // The running executable must still be there, under its own name.
         assert_eq!(
-            fs::read_to_string(app_dir.join("LocalMind.exe")).unwrap(),
+            fs::read_to_string(app_dir.join("ReadMe.exe")).unwrap(),
             "live"
         );
-        assert!(!app_dir.join("LocalMind.exe.old").exists());
+        assert!(!app_dir.join("ReadMe.exe.old").exists());
 
         let _ = fs::remove_dir_all(&root);
     }
@@ -370,17 +370,17 @@ mod tests {
         let staging = root.join("staging");
         fs::create_dir_all(&app_dir).unwrap();
         fs::create_dir_all(&staging).unwrap();
-        fs::write(app_dir.join("LocalMind.exe"), b"live").unwrap();
-        fs::write(staging.join("LocalMind.exe"), b"updated").unwrap();
+        fs::write(app_dir.join("ReadMe.exe"), b"live").unwrap();
+        fs::write(staging.join("ReadMe.exe"), b"updated").unwrap();
 
-        swap(&app_dir, &staging, std::ffi::OsStr::new("LocalMind.exe")).unwrap();
+        swap(&app_dir, &staging, std::ffi::OsStr::new("ReadMe.exe")).unwrap();
 
         assert_eq!(
-            fs::read_to_string(app_dir.join("LocalMind.exe")).unwrap(),
+            fs::read_to_string(app_dir.join("ReadMe.exe")).unwrap(),
             "updated"
         );
         assert_eq!(
-            fs::read_to_string(app_dir.join("LocalMind.exe.old")).unwrap(),
+            fs::read_to_string(app_dir.join("ReadMe.exe.old")).unwrap(),
             "live",
             "the previous version is kept until the next boot cleans it"
         );
@@ -414,7 +414,7 @@ mod tests {
     fn a_writable_folder_passes_and_the_probe_is_cleaned_up() {
         let dir = temp_dir("writable");
         ensure_writable(&dir).unwrap();
-        assert!(!dir.join(".localmind-update-test").exists());
+        assert!(!dir.join(".readme-update-test").exists());
         let _ = fs::remove_dir_all(&dir);
     }
 
@@ -434,9 +434,9 @@ mod tests {
             let file = File::create(&archive).unwrap();
             let mut writer = zip::ZipWriter::new(file);
             let opts = zip::write::SimpleFileOptions::default();
-            writer.start_file::<_, ()>("LocalMind/LocalMind.exe", opts).unwrap();
+            writer.start_file::<_, ()>("ReadMe/ReadMe.exe", opts).unwrap();
             writer.write_all(b"binary").unwrap();
-            writer.start_file::<_, ()>("LocalMind/.portable", opts).unwrap();
+            writer.start_file::<_, ()>("ReadMe/.portable", opts).unwrap();
             writer.write_all(b"").unwrap();
             writer.finish().unwrap();
         }
@@ -444,9 +444,9 @@ mod tests {
         let out = dir.join("staged");
         extract_stripping_root(&archive, &out).unwrap();
 
-        assert_eq!(fs::read_to_string(out.join("LocalMind.exe")).unwrap(), "binary");
+        assert_eq!(fs::read_to_string(out.join("ReadMe.exe")).unwrap(), "binary");
         assert!(out.join(".portable").exists());
-        assert!(!out.join("LocalMind").exists(), "wrapper must be dropped");
+        assert!(!out.join("ReadMe").exists(), "wrapper must be dropped");
 
         let _ = fs::remove_dir_all(&dir);
     }
@@ -461,7 +461,7 @@ mod tests {
             let file = File::create(&archive).unwrap();
             let mut writer = zip::ZipWriter::new(file);
             writer
-                .start_file::<_, ()>("LocalMind/../evil.exe", zip::write::SimpleFileOptions::default())
+                .start_file::<_, ()>("ReadMe/../evil.exe", zip::write::SimpleFileOptions::default())
                 .unwrap();
             writer.write_all(b"pwned").unwrap();
             writer.finish().unwrap();

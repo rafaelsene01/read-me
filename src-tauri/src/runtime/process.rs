@@ -243,7 +243,7 @@ mod tests {
 /// configuration.
 ///
 /// Run with:
-///   set LOCALMIND_LLAMA_SERVER=... && set LOCALMIND_GGUF=... && set LOCALMIND_BASE=...
+///   set README_LLAMA_SERVER=... && set README_GGUF=... && set README_BASE=...
 ///   cargo test sidecar_real -- --ignored --nocapture
 #[cfg(test)]
 mod sidecar_real {
@@ -252,9 +252,9 @@ mod sidecar_real {
     #[tokio::test]
     #[ignore = "starts a real llama-server and loads a real model"]
     async fn the_real_sidecar_is_hidden_logged_and_dies_with_the_job() {
-        let binary = std::env::var("LOCALMIND_LLAMA_SERVER").expect("set LOCALMIND_LLAMA_SERVER");
-        let model = std::env::var("LOCALMIND_GGUF").expect("set LOCALMIND_GGUF");
-        let base = PathBuf::from(std::env::var("LOCALMIND_BASE").expect("set LOCALMIND_BASE"));
+        let binary = std::env::var("README_LLAMA_SERVER").expect("set README_LLAMA_SERVER");
+        let model = std::env::var("README_GGUF").expect("set README_GGUF");
+        let base = PathBuf::from(std::env::var("README_BASE").expect("set README_BASE"));
 
         let job = JobState::create();
         println!("job criado: {}", job.0.is_some());

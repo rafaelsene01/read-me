@@ -12,7 +12,7 @@
 //     --manifest latest.json \
 //     --key windows-x86_64-portable \
 //     --tag v1.0.0 \
-//     --signature-file LocalMind_1.0.0_x64-portable.zip.sig \
+//     --signature-file ReadMe_1.0.0_x64-portable.zip.sig \
 //     (--url <url> | --assets assets.json --match portable.zip)
 
 import { readFileSync, writeFileSync } from "node:fs";

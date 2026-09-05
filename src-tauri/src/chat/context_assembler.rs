@@ -1241,9 +1241,9 @@ mod tests {
 /// own data:
 ///
 /// ```text
-/// LOCALMIND_EMBED_CACHE=<copy of models--intfloat--multilingual-e5-small's parent>
-/// LOCALMIND_ORT_DYLIB=<path to onnxruntime.dll>
-/// LOCALMIND_VECTORS_COPY=<copy of the user's vectors/ folder>
+/// README_EMBED_CACHE=<copy of models--intfloat--multilingual-e5-small's parent>
+/// README_ORT_DYLIB=<path to onnxruntime.dll>
+/// README_VECTORS_COPY=<copy of the user's vectors/ folder>
 /// cargo test --lib chat::retrieval_quality -- --ignored --nocapture
 /// ```
 #[cfg(test)]
@@ -1272,16 +1272,16 @@ mod retrieval_quality {
     }
 
     #[tokio::test]
-    #[ignore = "needs LOCALMIND_EMBED_CACHE, LOCALMIND_ORT_DYLIB and LOCALMIND_VECTORS_COPY"]
+    #[ignore = "needs README_EMBED_CACHE, README_ORT_DYLIB and README_VECTORS_COPY"]
     async fn an_unrelated_document_still_clears_the_relative_floor() {
-        let Ok(cache) = std::env::var("LOCALMIND_EMBED_CACHE") else {
-            panic!("set LOCALMIND_EMBED_CACHE to a *copy* of the model cache");
+        let Ok(cache) = std::env::var("README_EMBED_CACHE") else {
+            panic!("set README_EMBED_CACHE to a *copy* of the model cache");
         };
-        let Ok(dylib) = std::env::var("LOCALMIND_ORT_DYLIB") else {
-            panic!("set LOCALMIND_ORT_DYLIB to the onnxruntime shared library");
+        let Ok(dylib) = std::env::var("README_ORT_DYLIB") else {
+            panic!("set README_ORT_DYLIB to the onnxruntime shared library");
         };
-        let Ok(vectors) = std::env::var("LOCALMIND_VECTORS_COPY") else {
-            panic!("set LOCALMIND_VECTORS_COPY to a *copy* of the vectors folder — never the original");
+        let Ok(vectors) = std::env::var("README_VECTORS_COPY") else {
+            panic!("set README_VECTORS_COPY to a *copy* of the vectors folder — never the original");
         };
         std::env::set_var("ORT_DYLIB_PATH", &dylib);
         embedding::set_cache_dir(std::path::PathBuf::from(cache));
@@ -1358,16 +1358,16 @@ mod retrieval_quality {
     /// questions it has nothing to do with. A threshold is only worth writing
     /// down if the worst real hit is nearer than the best irrelevant one.
     #[tokio::test]
-    #[ignore = "needs LOCALMIND_EMBED_CACHE, LOCALMIND_ORT_DYLIB and LOCALMIND_VECTORS_COPY"]
+    #[ignore = "needs README_EMBED_CACHE, README_ORT_DYLIB and README_VECTORS_COPY"]
     async fn the_gap_between_a_real_hit_and_the_least_bad_one_is_measured_not_assumed() {
-        let Ok(cache) = std::env::var("LOCALMIND_EMBED_CACHE") else {
-            panic!("set LOCALMIND_EMBED_CACHE to a *copy* of the model cache");
+        let Ok(cache) = std::env::var("README_EMBED_CACHE") else {
+            panic!("set README_EMBED_CACHE to a *copy* of the model cache");
         };
-        let Ok(dylib) = std::env::var("LOCALMIND_ORT_DYLIB") else {
-            panic!("set LOCALMIND_ORT_DYLIB to the onnxruntime shared library");
+        let Ok(dylib) = std::env::var("README_ORT_DYLIB") else {
+            panic!("set README_ORT_DYLIB to the onnxruntime shared library");
         };
-        let Ok(vectors) = std::env::var("LOCALMIND_VECTORS_COPY") else {
-            panic!("set LOCALMIND_VECTORS_COPY to a *copy* of the vectors folder");
+        let Ok(vectors) = std::env::var("README_VECTORS_COPY") else {
+            panic!("set README_VECTORS_COPY to a *copy* of the vectors folder");
         };
         std::env::set_var("ORT_DYLIB_PATH", &dylib);
         embedding::set_cache_dir(std::path::PathBuf::from(cache));

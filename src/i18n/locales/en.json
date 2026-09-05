@@ -1,6 +1,6 @@
 {
   "app": {
-    "name": "LocalMind"
+    "name": "ReadMe"
   },
   "sidebar": {
     "chats": "Chats",
@@ -73,7 +73,7 @@
     },
     "engine": {
       "title": "Built-in runtime (llama.cpp)",
-      "description": "Ships inside LocalMind — there is nothing else to install.",
+      "description": "Ships inside ReadMe — there is nothing else to install.",
       "notPrepared": "Not prepared yet. Preparing picks the build that runs on this machine.",
       "prepare": "Prepare runtime",
       "preparing": "Preparing the runtime…",
@@ -158,9 +158,9 @@
     "languagePortuguese": "Português"
   },
   "onboarding": {
-    "welcomeTitle": "Welcome to LocalMind",
+    "welcomeTitle": "Welcome to ReadMe",
     "welcomeSubtitle": "A private, 100% local AI chat. Let's set a few things up.",
-    "folderLabel": "Where should LocalMind store your models, documents and chats?",
+    "folderLabel": "Where should ReadMe store your models, documents and chats?",
     "folderChoose": "Choose folder",
     "folderUseDefault": "Use suggested folder",
     "themeLabel": "Pick a theme",
@@ -168,7 +168,7 @@
     "finish": "Get started",
     "settingUp": "Setting up...",
     "storageLostTitle": "Storage folder not found",
-    "storageLostSubtitle": "Confirm where LocalMind should store your data to continue.",
+    "storageLostSubtitle": "Confirm where ReadMe should store your data to continue.",
     "storageLostWarning": "The folder {{path}} is no longer available. If it is on a removable drive, plug it back in and choose the same folder; otherwise pick a new one. Data that was inside it is not recovered by this step."
   }
 }

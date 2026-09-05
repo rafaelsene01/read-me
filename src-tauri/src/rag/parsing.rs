@@ -175,7 +175,7 @@ mod tests {
 
     #[test]
     fn a_text_file_with_only_whitespace_reports_no_text() {
-        let path = std::env::temp_dir().join(format!("localmind-blank-{}.txt", std::process::id()));
+        let path = std::env::temp_dir().join(format!("readme-blank-{}.txt", std::process::id()));
         std::fs::write(&path, "   \n\n  ").unwrap();
 
         let err = extract_text(&path).unwrap_err();
@@ -186,7 +186,7 @@ mod tests {
 
     #[test]
     fn reads_markdown_as_plain_text() {
-        let path = std::env::temp_dir().join(format!("localmind-doc-{}.md", std::process::id()));
+        let path = std::env::temp_dir().join(format!("readme-doc-{}.md", std::process::id()));
         std::fs::write(&path, "# Título\n\nConteúdo do documento.").unwrap();
 
         let text = extract_text(&path).unwrap();

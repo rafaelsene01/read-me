@@ -132,7 +132,7 @@ pub fn ensure_folder_structure(base_path: &Path) -> Result<(), String> {
     // Fail fast on read-only / no-permission folders instead of silently
     // succeeding and breaking later on the first write. This is also what
     // catches a portable copy dropped on a write-protected drive.
-    let probe = base_path.join(".localmind-write-test");
+    let probe = base_path.join(".readme-write-test");
     fs::write(&probe, b"ok").map_err(|e| format!("pasta sem permissão de escrita: {e}"))?;
     let _ = fs::remove_file(&probe);
 
@@ -143,7 +143,7 @@ pub fn ensure_folder_structure(base_path: &Path) -> Result<(), String> {
 }
 
 pub fn db_path(base_path: &Path) -> PathBuf {
-    base_path.join("localmind.db")
+    base_path.join("readme.db")
 }
 
 /// What the app knows about the storage folder at boot.
@@ -163,7 +163,7 @@ pub struct StorageStatus {
 
 /// The decision itself, split from the I/O so it can be tested.
 ///
-/// `db_open` matters on its own: a folder that exists but whose `localmind.db`
+/// `db_open` matters on its own: a folder that exists but whose `readme.db`
 /// could not be opened (corrupted file, permissions) is just as unusable, and
 /// the wizard recovers both — `complete_onboarding` recreates the structure and
 /// reopens the connection.
@@ -197,8 +197,8 @@ mod tests {
 
     #[test]
     fn installed_builds_keep_using_the_os_folders() {
-        let os_dir = Path::new("/os/config/com.localmind.app");
-        let app_dir = Path::new("/opt/localmind");
+        let os_dir = Path::new("/os/config/com.readme.app");
+        let app_dir = Path::new("/opt/readme");
 
         // No regression on AD-012: the pointer stays where it has always been.
         assert_eq!(
@@ -209,8 +209,8 @@ mod tests {
 
     #[test]
     fn portable_builds_stay_next_to_the_executable() {
-        let os_dir = Path::new("/os/config/com.localmind.app");
-        let app_dir = Path::new("/media/usb/LocalMind");
+        let os_dir = Path::new("/os/config/com.readme.app");
+        let app_dir = Path::new("/media/usb/ReadMe");
 
         assert_eq!(
             resolve_bootstrap_dir(InstallFlavor::Portable, Some(app_dir), os_dir).unwrap(),
@@ -240,10 +240,10 @@ mod tests {
 
     #[test]
     fn a_configured_and_present_folder_is_ready() {
-        let cfg = completed_config("/data/localmind");
+        let cfg = completed_config("/data/readme");
         let status = evaluate_storage(Some(&cfg), true, true);
         assert!(status.configured && status.ready);
-        assert_eq!(status.base_path, "/data/localmind");
+        assert_eq!(status.base_path, "/data/readme");
     }
 
     #[test]
@@ -251,16 +251,16 @@ mod tests {
         // The whole point: the app must not come up "ready" pointing at a
         // folder that is not there. The path rides along so the warning can
         // name it.
-        let cfg = completed_config("E:/localmind");
+        let cfg = completed_config("E:/readme");
         let status = evaluate_storage(Some(&cfg), false, false);
         assert!(status.configured);
         assert!(!status.ready);
-        assert_eq!(status.base_path, "E:/localmind");
+        assert_eq!(status.base_path, "E:/readme");
     }
 
     #[test]
     fn a_folder_that_exists_but_whose_database_failed_to_open_is_not_ready() {
-        let cfg = completed_config("/data/localmind");
+        let cfg = completed_config("/data/readme");
         assert!(!evaluate_storage(Some(&cfg), true, false).ready);
     }
 
@@ -268,7 +268,7 @@ mod tests {
     fn no_config_and_unfinished_onboarding_both_mean_not_configured() {
         assert!(!evaluate_storage(None, true, true).configured);
 
-        let mut cfg = completed_config("/data/localmind");
+        let mut cfg = completed_config("/data/readme");
         cfg.onboarding_completed = false;
         let status = evaluate_storage(Some(&cfg), true, true);
         assert!(!status.configured);

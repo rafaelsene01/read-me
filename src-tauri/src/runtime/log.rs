@@ -47,7 +47,7 @@ mod tests {
     use super::*;
 
     fn temp_dir(name: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("localmind-log-{name}-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("readme-log-{name}-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
         dir
@@ -55,7 +55,7 @@ mod tests {
 
     #[test]
     fn the_log_lives_beside_the_binary_it_belongs_to() {
-        let base = Path::new("/data/localmind");
+        let base = Path::new("/data/readme");
         assert_eq!(log_path(base), base.join("runtime").join("llama-server.log"));
         assert_eq!(
             previous_log_path(base),

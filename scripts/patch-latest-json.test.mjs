@@ -59,9 +59,9 @@ test("addPlatform requires both url and signature", () => {
 
 test("pickAssetUrl finds the asset by substring", () => {
   const assets = [
-    { name: "LocalMind_1.0.0_x64-setup.exe", browser_download_url: "https://example/setup.exe" },
-    { name: "LocalMind_1.0.0_x64_en-US.msi", browser_download_url: "https://example/app.msi" },
-    { name: "LocalMind_1.0.0_x64-portable.zip", browser_download_url: "https://example/portable.zip" },
+    { name: "ReadMe_1.0.0_x64-setup.exe", browser_download_url: "https://example/setup.exe" },
+    { name: "ReadMe_1.0.0_x64_en-US.msi", browser_download_url: "https://example/app.msi" },
+    { name: "ReadMe_1.0.0_x64-portable.zip", browser_download_url: "https://example/portable.zip" },
   ];
   assert.equal(pickAssetUrl(assets, "x64-portable.zip"), "https://example/portable.zip");
   assert.equal(pickAssetUrl(assets, "en-US.msi"), "https://example/app.msi");
@@ -69,8 +69,8 @@ test("pickAssetUrl finds the asset by substring", () => {
 
 test("pickAssetUrl is strict about ambiguity", () => {
   const assets = [
-    { name: "LocalMind_1.0.0_x64-portable.zip", browser_download_url: "https://example/portable.zip" },
-    { name: "LocalMind_1.0.0_x64-portable.zip.sig", browser_download_url: "https://example/portable.zip.sig" },
+    { name: "ReadMe_1.0.0_x64-portable.zip", browser_download_url: "https://example/portable.zip" },
+    { name: "ReadMe_1.0.0_x64-portable.zip.sig", browser_download_url: "https://example/portable.zip.sig" },
   ];
   // "portable.zip" matches both the archive and its signature — refusing beats
   // silently picking the wrong one.
@@ -79,7 +79,7 @@ test("pickAssetUrl is strict about ambiguity", () => {
 });
 
 test("pickAssetUrl accepts the gh CLI `url` field as well", () => {
-  const assets = [{ name: "LocalMind_1.0.0_x64-portable.zip", url: "https://api/assets/1" }];
+  const assets = [{ name: "ReadMe_1.0.0_x64-portable.zip", url: "https://api/assets/1" }];
   assert.equal(pickAssetUrl(assets, "x64-portable.zip"), "https://api/assets/1");
 });
 
@@ -90,12 +90,12 @@ test("pickAssetUrl fails when nothing matches", () => {
 
 test("pickAssetUrlByName is not confused by the .sig sharing the archive name", () => {
   const assets = [
-    { name: "LocalMind_1.0.0_x64-portable.zip", browser_download_url: "https://example/portable.zip" },
-    { name: "LocalMind_1.0.0_x64-portable.zip.sig", browser_download_url: "https://example/portable.zip.sig" },
+    { name: "ReadMe_1.0.0_x64-portable.zip", browser_download_url: "https://example/portable.zip" },
+    { name: "ReadMe_1.0.0_x64-portable.zip.sig", browser_download_url: "https://example/portable.zip.sig" },
   ];
-  assert.equal(pickAssetUrlByName(assets, "LocalMind_1.0.0_x64-portable.zip"), "https://example/portable.zip");
+  assert.equal(pickAssetUrlByName(assets, "ReadMe_1.0.0_x64-portable.zip"), "https://example/portable.zip");
   assert.equal(
-    pickAssetUrlByName(assets, "LocalMind_1.0.0_x64-portable.zip.sig"),
+    pickAssetUrlByName(assets, "ReadMe_1.0.0_x64-portable.zip.sig"),
     "https://example/portable.zip.sig",
   );
 });
@@ -109,15 +109,15 @@ test("retagDownloadUrl replaces the draft ref that shipped the broken v0.2.0 lin
   // The real URL taken from the v0.2.0 run log. Fetching it returns 404;
   // the tagged form returns 200. This is the regression, verbatim.
   const draft =
-    "https://github.com/rafaelsene01/local-mind/releases/download/untagged-1d4dbf70f0443ab3b6c9/LocalMind_0.2.0_x64-portable.zip";
+    "https://github.com/rafaelsene01/read-me/releases/download/untagged-1d4dbf70f0443ab3b6c9/ReadMe_0.2.0_x64-portable.zip";
   assert.equal(
     retagDownloadUrl(draft, "v0.2.0"),
-    "https://github.com/rafaelsene01/local-mind/releases/download/v0.2.0/LocalMind_0.2.0_x64-portable.zip",
+    "https://github.com/rafaelsene01/read-me/releases/download/v0.2.0/ReadMe_0.2.0_x64-portable.zip",
   );
 });
 
 test("retagDownloadUrl leaves an already tagged URL alone", () => {
-  const tagged = "https://github.com/o/r/releases/download/v1.2.3/LocalMind_1.2.3_x64-portable.zip";
+  const tagged = "https://github.com/o/r/releases/download/v1.2.3/ReadMe_1.2.3_x64-portable.zip";
   assert.equal(retagDownloadUrl(tagged, "v1.2.3"), tagged);
 });
 
@@ -125,8 +125,8 @@ test("retagDownloadUrl preserves the filename exactly", () => {
   // Tauri's locale-tagged names are the reason the URL is never rebuilt from
   // scratch — only the ref segment is touched.
   assert.equal(
-    retagDownloadUrl("https://github.com/o/r/releases/download/untagged-abc/LocalMind_1.2.3_x64_en-US.msi", "v1.2.3"),
-    "https://github.com/o/r/releases/download/v1.2.3/LocalMind_1.2.3_x64_en-US.msi",
+    retagDownloadUrl("https://github.com/o/r/releases/download/untagged-abc/ReadMe_1.2.3_x64_en-US.msi", "v1.2.3"),
+    "https://github.com/o/r/releases/download/v1.2.3/ReadMe_1.2.3_x64_en-US.msi",
   );
 });
 

@@ -68,14 +68,14 @@ São 9 tasks — acima do lote de ~8, então a execução deve começar pela ofe
 
 ## Task Breakdown
 
-### T1: Restaurar a árvore e medir o baseline real
+### T1: Medir o baseline real
 
-**O quê:** restaurar `src/`, `src-tauri/`, `scripts/`, `public/` (`git checkout -- .`, sem tocar nos arquivos `M` de documentação). Depois: conferir se `src-tauri/src/types_export.rs` existe, se `package.json` tem script `test`, e rodar os gates para anotar os números.
+**O quê:** conferir se `src-tauri/src/types_export.rs` existe, se `package.json` tem script `test`, e rodar os gates para anotar os números.
 **Onde:** working tree (nenhum arquivo de código editado)
 **Tests:** none — é uma medição, não uma mudança de comportamento
 **Gate:** `cd src-tauri && cargo test --lib` e `npm run build` executados, com a saída colada no log deste arquivo
 **Done when:** está escrito aqui (a) o baseline de testes medido, (b) se `src/types.ts` é gerado ou escrito à mão nesta árvore, (c) se `npm test` existe
-**Por que primeiro:** 124 arquivos de código estão apagados no working tree. Sem isso, toda task seguinte edita um arquivo que não existe, e o baseline citado no `AGENTS.md` não pode ser confirmado.
+**Por que primeiro:** o baseline citado no `AGENTS.md` (181 testes Rust, 63 no frontend) não foi confirmado em nenhuma sessão recente, e sem número medido não dá para detectar teste perdido. Contexto: os 124 arquivos de código chegaram a ser apagados do working tree e commitados assim em `9afb29a`; foram restaurados de `674b1c6` em 2026-09-04, com o rename `local-mind`→`read-me` aplicado a eles no mesmo passo.
 
 ### T2: Migração 9 — tabela `books`
 
