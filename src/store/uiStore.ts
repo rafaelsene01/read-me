@@ -1,8 +1,8 @@
 import { create } from "zustand";
 
-// SPEC: self-contained-runtime (SELF-01)
+// SPEC: self-contained-runtime (SELF-01), book-library (LIB-09)
 
-export type ActiveView = "chat" | "settings" | "runtime" | "documents";
+export type ActiveView = "chat" | "settings" | "runtime" | "library";
 
 interface UiState {
   activeView: ActiveView;

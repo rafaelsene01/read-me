@@ -1,6 +1,8 @@
+// SPEC: app-shell (SHELL-01), book-library (LIB-09)
+
 import { useTranslation } from "react-i18next";
 import { ChatList } from "./ChatList";
-import { DocumentsSection } from "./DocumentsSection";
+import { LibrarySection } from "./LibrarySection";
 import { RuntimeSection } from "./RuntimeSection";
 import { SettingsSection } from "./SettingsSection";
 
@@ -15,7 +17,7 @@ export function Sidebar() {
       </div>
 
       <ChatList />
-      <DocumentsSection />
+      <LibrarySection />
       <RuntimeSection />
       <SettingsSection />
     </aside>

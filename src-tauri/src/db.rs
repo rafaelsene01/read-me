@@ -1,5 +1,6 @@
 // SPEC: app-shell (SHELL-08), chat-messaging (CHAT-11), documents-rag (DOC-02),
-//       self-contained-runtime (SELF-06), conversation-memory (MEM-15, MEM-16)
+//       self-contained-runtime (SELF-06), conversation-memory (MEM-15, MEM-16),
+//       book-library (LIB-07)
 
 use rusqlite::Connection;
 use std::path::Path;
@@ -157,6 +158,26 @@ const MIGRATION_8_CHAT_MEMORY: &str = "
 ALTER TABLE chats ADD COLUMN use_memory INTEGER NOT NULL DEFAULT 1;
 ";
 
+/// A book is a file the user keeps, not a document the app indexes: importing
+/// one writes this row and nothing else — no extraction, no chunking, no
+/// embedding, no LanceDB (LIB-07).
+///
+/// There is no `file_path` on purpose. The file always lives at
+/// `<base_path>/library/<filename>`, so an absolute path would break the
+/// portable mode the moment the drive letter of the pen drive changes.
+///
+/// There is no reading-position column either: it lands with the reader, when
+/// there is code that writes it.
+const MIGRATION_9_BOOKS: &str = "
+CREATE TABLE IF NOT EXISTS books (
+    id          TEXT PRIMARY KEY,
+    filename    TEXT NOT NULL,
+    format      TEXT NOT NULL,
+    size_bytes  INTEGER NOT NULL,
+    imported_at TEXT NOT NULL
+);
+";
+
 /// Ordered list of schema versions. A migration is applied only when
 /// `PRAGMA user_version` is below its number, which is what makes a column
 /// change reach databases that already exist on disk — `CREATE TABLE IF NOT
@@ -170,6 +191,7 @@ const MIGRATIONS: &[(u32, &str)] = &[
     (6, MIGRATION_6_DOCUMENT_NAMESPACE),
     (7, MIGRATION_7_SINGLE_RUNTIME),
     (8, MIGRATION_8_CHAT_MEMORY),
+    (9, MIGRATION_9_BOOKS),
 ];
 
 fn user_version(conn: &Connection) -> Result<u32, String> {
@@ -483,6 +505,68 @@ mod tests {
         let second = conn.execute("INSERT INTO embedded_runtime (id, backend) VALUES (2, 'cpu')", []);
 
         assert!(second.is_err(), "CHECK (id = 1) must reject a second row");
+    }
+
+    /// Checked against the list, not against the docs: two migrations sharing a
+    /// number compile fine, the second simply never runs because `user_version`
+    /// is already past it.
+    #[test]
+    fn books_is_migration_nine() {
+        let position = MIGRATIONS
+            .iter()
+            .position(|(_, sql)| *sql == MIGRATION_9_BOOKS)
+            .expect("the migration must be registered in the list");
+        assert_eq!(MIGRATIONS[position].0, 9);
+    }
+
+    #[test]
+    fn a_fresh_database_gets_the_books_table_at_version_nine() {
+        let conn = migrated_in_memory();
+
+        assert_eq!(user_version(&conn).unwrap(), 9);
+        assert!(table_names(&conn).contains(&"books".to_string()));
+
+        let mut stmt = conn.prepare("PRAGMA table_info(books)").unwrap();
+        let columns: Vec<String> = stmt
+            .query_map([], |row| row.get(1))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        assert_eq!(
+            columns,
+            vec!["id", "filename", "format", "size_bytes", "imported_at"]
+        );
+    }
+
+    /// The upgrade path that matters for a machine already in use: the library
+    /// arrives empty and everything the user already had is still there.
+    #[test]
+    fn a_database_stopped_at_eight_upgrades_to_nine_keeping_its_rows() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        for (version, sql) in MIGRATIONS.iter().take_while(|(v, _)| *v <= 8) {
+            conn.execute_batch(sql).unwrap();
+            conn.pragma_update(None, "user_version", *version).unwrap();
+        }
+        conn.execute_batch(
+            "INSERT INTO chats (id, title, created_at, updated_at)
+                VALUES ('chat-old', 'conversa antiga', 'now', 'now');
+             INSERT INTO messages (id, chat_id, role, content, created_at)
+                VALUES ('m1', 'chat-old', 'user', 'pergunta', 'now');
+             INSERT INTO documents (id, filename, file_path, size_bytes, status, created_at, updated_at)
+                VALUES ('d1', 'a.pdf', '/tmp/a.pdf', 1, 'ready', 'now', 'now');",
+        )
+        .unwrap();
+        assert_eq!(user_version(&conn).unwrap(), 8);
+
+        apply_migrations(&mut conn).unwrap();
+
+        assert_eq!(user_version(&conn).unwrap(), 9);
+        for (table, expected) in [("chats", 1), ("messages", 1), ("documents", 1), ("books", 0)] {
+            let count: i64 = conn
+                .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| row.get(0))
+                .unwrap();
+            assert_eq!(count, expected, "{table} changed in the upgrade");
+        }
     }
 
     #[test]

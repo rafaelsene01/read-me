@@ -148,8 +148,12 @@ jobs:
         include:
           - os: windows-latest
             bundles: msi,nsis
-          - os: ubuntu-22.04
-            bundles: deb,appimage
+          # Linux is off by request (AD-053): releases ship Windows only for
+          # now. The ubuntu-only steps below stay in place — they are inert
+          # while no `ubuntu-22.04` entry exists here, and uncommenting this
+          # entry is the whole restore.
+          # - os: ubuntu-22.04
+          #   bundles: deb,appimage
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v5

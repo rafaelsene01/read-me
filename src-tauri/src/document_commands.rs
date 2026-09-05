@@ -1,3 +1,5 @@
+// SPEC: documents-rag (DOC-02, DOC-03, DOC-08, DOC-09), book-library (LIB-02)
+
 use crate::db::{require_conn, DbState};
 use crate::rag::parsing;
 use crate::rag::pipeline::{self, DocumentStatus};
@@ -34,7 +36,8 @@ fn documents_dir(app: &AppHandle) -> Result<PathBuf, String> {
 
 /// Keeps the original name when possible; a second import of the same name
 /// gets a suffix rather than overwriting the earlier document's bytes.
-fn unique_destination(dir: &Path, filename: &str) -> PathBuf {
+/// Shared with the book library, which has the same collision rule (LIB-02).
+pub(crate) fn unique_destination(dir: &Path, filename: &str) -> PathBuf {
     let candidate = dir.join(filename);
     if !candidate.exists() {
         return candidate;

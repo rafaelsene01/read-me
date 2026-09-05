@@ -352,18 +352,31 @@ flowchart TB
 
 ---
 
-## M10 — Pivô para leitor — 📋 PLANEJADO (2026-09-04, ver AD-052)
+## M10 — Pivô para leitor — ⚙️ EM EXECUÇÃO (planejado 2026-09-04 pela AD-052; **M10.1 implementado em 2026-09-05, não verificado clicando**)
 
 O produto deixa de ser um chat com RAG e passa a ser um **leitor**: importar livros, remontá-los para leitura na tela e lê-los em voz alta com marcação estilo karaokê. Planejado em três fatias; **só a primeira tem tasks**.
 
-### M10.1 — Biblioteca de livros — 📋 PLANEJADO, 9 tasks, nada implementado
+> **Leia isto antes de confiar no "implementado".** As oito primeiras tasks da M10.1 passaram nos gates automatizados — `cargo test --lib` saiu de **177 / 0 falhas / 15 ignorados** (baseline medido na T1, que **não** bate com os 181/16 que o `AGENTS.md` registrava) para **195 / 0 / 15**, `cargo check --lib` com **zero warnings**, `npm run build` exit 0 com o bundle mudando de `index-ng6tE1z0.js` para `index-BhmqRmEJ.js` (o sinal de que a rota realmente ligou) e i18n em **158/158 chaves**. **Mas o app não foi aberto uma única vez** (`npm run tauri dev` não rodou) e **nenhum `invoke` foi disparado**. Nenhum requisito LIB-xx está `Verified`; todos estão `Implemented`. A T9 é a UAT que fecha isso.
+
+### M10.1 — Biblioteca de livros — ⚙️ 8 de 9 tasks (2026-09-05); **falta a T9, a UAT**
 `.specs/features/book-library/` (spec + design + tasks)
 
-- Importar PDF e Kindle (`.epub`, `.mobi`, `.azw`, `.azw3`) pela aba que hoje é Documentos
+**O que foi entregue e passa nos gates:**
+
+- Importar PDF e Kindle (`.epub`, `.mobi`, `.azw`, `.azw3`) pela aba que era Documentos — a aba **é** a Biblioteca desde a T7: `ActiveView` só tem `"library"` e `App.tsx` renderiza o `LibraryPanel`
 - Guardar em `<base_path>/library/`; botão que abre a pasta no explorador, com o caminho absoluto na tela
-- **Sem nenhum passo de RAG** sobre esses arquivos
-- Recusar na importação o que o leitor não vai abrir: formato fora da lista e arquivo com DRM
-- Tabela nova `books` (migração 9) — o porquê de não reusar `documents` está na AD-052
+- **Sem nenhum passo de RAG** sobre esses arquivos — fixado por teste: depois de importar, `SELECT COUNT(*) FROM documents` é **0**
+- Recusar na importação o que o leitor não vai abrir: extensão fora da lista, PalmDB com o campo de criptografia ≠ 0 e EPUB com `META-INF/encryption.xml`. Um arquivo **ilegível** vira erro de leitura, nunca "sem DRM" — o teste pegou o inverso disso durante a T3 e a asserção continua lá
+- Tabela nova `books` (**migração 9**) — o porquê de não reusar `documents` está na AD-052
+- 18 testes novos em Rust (3 na migração, 9 na detecção de formato/DRM, 6 nos comandos)
+
+**O que o leitor deste roadmap precisa saber que NÃO está provado:**
+
+- **O app nunca foi aberto nesta rodada.** LIB-01 (seletor nativo), LIB-04 (recusa sem pasta-base configurada), LIB-11 (abrir a pasta) e LIB-12 (caminho na tela) estão **escritos, não medidos** — `library_dir()` exige um `AppHandle` e nunca rodou
+- **Os quatro comandos Tauri não têm teste** (não há runner de integração Tauri). O que está provado são as funções puras e o SQL contra banco em memória
+- **Nenhum arquivo `.mobi`/`.azw`/`.azw3`/`.epub` real** passou pelo detector de DRM — tudo sintético, montado byte a byte
+- **Não há teste de frontend**: o store e os componentes nunca rodaram. `vitest.config.ts` existe e aponta para `src/test/setup.ts` e dois dobles que **não existem na árvore**
+- **A migração 9 não foi ensaiada contra cópia de banco real** (`db::real_database` continua `#[ignore]`)
 
 ### M10.2 — Leitor — ⛔ NÃO PLANEJADO
 Extrair o texto, remontar o livro em formato navegável **preservando as gravuras**, renderizar na tela. É esta fatia que define a **âncora de posição de leitura**, e é por isso que a `reading-history` está bloqueada.
@@ -376,10 +389,10 @@ Ler em voz alta marcando a palavra corrente. **Gate:** existe TTS local com limi
 
 ### O que o M10 revoga
 
-- **M5 (RAG global):** a UI de importação para RAG sai junto com a aba. O backend fica.
-- **M4/M6 (chat e memória):** a lista de chats dá lugar ao histórico de leituras.
+- **M5 (RAG global):** a UI de importação para RAG **saiu em 2026-09-05**, junto com a aba. O backend fica. Anotado em `.specs/features/documents-rag/spec.md`, requisito a requisito, sem apagar nenhum: DOC-01, DOC-02, DOC-03, DOC-05, DOC-08 e DOC-09 perderam a porta; DOC-10/11/12 continuam valendo porque o chat não foi revogado nesta rodada.
+- **M4/M6 (chat e memória):** a lista de chats dá lugar ao histórico de leituras. **Nada disso foi executado ainda** — o chat continua inteiro e é o único caminho verificado do app.
 
-Em ambos os casos a revogação é **marcada agora e executada depois** (AD-052). Gatilho da remoção do código: a primeira sessão após o leitor renderizar um livro ponta a ponta.
+A revogação do **código** continua **marcada, não executada** (AD-052). Gatilho escrito da remoção: a primeira sessão após o leitor (M10.2) renderizar um livro ponta a ponta. Órfãos de rota, presentes e compilando: `DocumentsPanel.tsx`, `DocumentRow.tsx`, `DocumentStatusBadge.tsx`, `documentsStore.ts`, `documentsApi.ts` e as chaves `sidebar.documents` / `documents.*`. Único arquivo apagado: `DocumentsSection.tsx`, e por obrigação do `tsc`, não por escolha.
 
 ---
 

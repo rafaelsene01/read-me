@@ -12,7 +12,7 @@ Esta feature fecha os três buracos de uma vez: um pipeline que produz releases 
 
 - [ ] Publicar uma release completa é **um clique** ("Run workflow" + escolher `major`/`minor`/`patch`) — versão, CHANGELOG, tag, artefatos e release saem juntos, sem nenhum passo manual
 - [ ] Nenhuma release acontece sem eu pedir: push em `master` **nunca** publica nada
-- [ ] Toda release traz `.msi`, `-setup.exe`, `.deb`, `.AppImage` **e** um `.zip` portátil, todos assinados
+- [ ] Toda release traz `.msi`, `-setup.exe` **e** um `.zip` portátil, todos assinados (`.deb` e `.AppImage` suspensos em 2026-09-05, AD-053)
 - [ ] Um usuário sem direitos de administrador consegue rodar e **atualizar** o app do começo ao fim
 - [ ] O app avisa que existe versão nova, respeita a resposta do usuário, e se atualiza sozinho quando autorizado
 
@@ -85,7 +85,7 @@ Confirmado por documentação oficial e pela CLI local — **não** deduzido:
 
 **Acceptance Criteria**:
 
-1. WHEN uma release é publicada THEN o sistema SHALL anexar a ela `.msi` e `-setup.exe` (Windows x86_64) e `.deb` e `.AppImage` (Linux x86_64)
+1. WHEN uma release é publicada THEN o sistema SHALL anexar a ela `.msi` e `-setup.exe` (Windows x86_64) e `.deb` e `.AppImage` (Linux x86_64) — **a metade Linux está suspensa desde 2026-09-05 (AD-053)**: o `build` só roda `windows-latest`, e nenhuma release nova traz `.deb` nem `.AppImage`
 2. WHEN o instalador NSIS é gerado THEN ele SHALL estar em modo `currentUser` — instalar em `%LOCALAPPDATA%` **sem** solicitar credenciais de administrador
 3. WHEN os bundles são gerados THEN o sistema SHALL produzir também os artefatos de update assinados (`.sig`) e um `latest.json` com uma entrada por formato
 4. WHEN qualquer job da matriz de build falha THEN a release SHALL permanecer em rascunho (draft), nunca publicada pela metade
@@ -211,7 +211,7 @@ Confirmado por documentação oficial e pela CLI local — **não** deduzido:
 | REL-05 | P1: CHANGELOG gerado dos Conventional Commits desde a última tag | Implemented | Verificado (git-cliff rodado no histórico real) |
 | REL-06 | P1: Commit `chore(release)`, tag `vX.Y.Z` e GitHub Release na mesma execução | **Verified** | `chore(release): v0.2.0` no histórico, tag `v0.2.0` e a release, todos do mesmo run (58m11s) |
 | REL-07 | P1: Disparo fora de `master` ou tag já existente falha antes do build | Implemented | Escrito, **não executado** |
-| REL-08 | P1: `.msi` + `-setup.exe` + `.deb` + `.AppImage` anexados a toda release | **Verified** | Os **4 estão na v0.2.0**: `.msi` 54.415.360 B, `-setup.exe` 34.526.071 B, `.deb` 53.543.986 B, `.AppImage` 126.958.072 B |
+| REL-08 | P1: `.msi` + `-setup.exe` anexados a toda release (`.deb` + `.AppImage` **suspensos**, AD-053) | **Partially verified** | Os **4 estiveram na v0.2.0**: `.msi` 54.415.360 B, `-setup.exe` 34.526.071 B, `.deb` 53.543.986 B, `.AppImage` 126.958.072 B. Desde 2026-09-05 a matriz do `build` tem só `windows-latest`, então a metade Linux **não sai mais** — não verificado numa release nova, porque nenhuma foi disparada depois da mudança |
 | REL-09 | P1: NSIS em `currentUser`, sem UAC | Implemented | Config explícita; **UAC não testado** |
 | REL-10 | P1: Artefatos de update assinados + `latest.json` por formato | ⚠️ Implemented | **5 `.sig` publicados** e `latest.json` com 7 chaves de plataforma. Mas a entrada portátil saiu com URL de rascunho que responde **404** — corrigido em 2026-07-27, **e a correção ainda não passou por uma release de verdade** |
 | REL-11 | P1: Falha de build mantém a release em draft | **Verified** | O run cancelado de 2026-07-26 (29m37s) não deixou release publicada; o `cleanup` apagou tag e rascunho, e a `v0.1.1` seguinte reusou o mesmo número |

@@ -6,7 +6,8 @@
     "chats": "Chats",
     "documents": "Documentos",
     "runtime": "Runtime",
-    "settings": "Configurações"
+    "settings": "Configurações",
+    "library": "Biblioteca"
   },
   "chats": {
     "newChat": "Novo chat",
@@ -61,6 +62,17 @@
     "supportedFormats": "PDF, DOCX, TXT e MD",
     "fileDialogTitle": "Escolha os documentos",
     "rejected": "Não importado: {{name}} — {{reason}}"
+  },
+  "library": {
+    "title": "Biblioteca",
+    "import": "Importar livros",
+    "importing": "Importando…",
+    "fileDialogTitle": "Escolha os livros",
+    "supportedFormats": "PDF, EPUB, MOBI, AZW e AZW3",
+    "openFolder": "Abrir pasta",
+    "rejected": "Não importado: {{name}} — {{reason}}",
+    "empty": "Nenhum livro importado ainda.",
+    "remove": "Remover"
   },
   "runtime": {
     "title": "Runtime",

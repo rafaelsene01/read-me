@@ -1,5 +1,6 @@
 // SPEC: app-shell (SHELL-04), chat-messaging (CHAT-06, CHAT-14),
-//       self-contained-runtime (SELF-01), conversation-memory (MEM-14, MEM-18)
+//       self-contained-runtime (SELF-01), conversation-memory (MEM-14, MEM-18),
+//       book-library (LIB-03, LIB-09)
 
 export interface Chat {
   id: string;
@@ -133,6 +134,25 @@ export interface DocumentStatusEvent {
   id: string;
   status: DocumentStatus;
   error_message: string | null;
+}
+
+/** Mirrors `BookRecord` in library_commands.rs. A book is a plain file: no
+ *  status, because nothing is processed after the copy (LIB-09). */
+export interface BookRecord {
+  id: string;
+  /** The name on disk — a collision was already resolved to "livro (2).pdf". */
+  filename: string;
+  /** Lowercase extension without the dot: "pdf" | "epub" | "mobi" | "azw" | "azw3". */
+  format: string;
+  size_bytes: number;
+  imported_at: string;
+}
+
+/** Same shape as `ImportResult`, with book rows instead of document rows: the
+ *  refused files come back named (LIB-03) instead of failing the whole batch. */
+export interface ImportBooksResult {
+  imported: BookRecord[];
+  rejected: RejectedImport[];
 }
 
 export interface InstalledModel {

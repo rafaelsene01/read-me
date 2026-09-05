@@ -1,9 +1,11 @@
+// SPEC: book-library (LIB-09)
+
 import { useEffect } from "react";
 import { Sidebar } from "./components/Sidebar/Sidebar";
 import { ChatPanel } from "./components/Chat/ChatPanel";
 import { SettingsPanel } from "./components/Settings/SettingsPanel";
 import { RuntimePanel } from "./components/Runtime/RuntimePanel";
-import { DocumentsPanel } from "./components/Documents/DocumentsPanel";
+import { LibraryPanel } from "./components/Library/LibraryPanel";
 import { Wizard } from "./components/Onboarding/Wizard";
 import { UpdateBanner } from "./components/Update/UpdateBanner";
 import { useConfigStore } from "./store/configStore";
@@ -49,8 +51,8 @@ function App() {
           <SettingsPanel />
         ) : activeView === "runtime" ? (
           <RuntimePanel />
-        ) : activeView === "documents" ? (
-          <DocumentsPanel />
+        ) : activeView === "library" ? (
+          <LibraryPanel />
         ) : (
           <ChatPanel />
         )}

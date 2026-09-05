@@ -6,23 +6,6 @@ Este arquivo é a fonte única. `CLAUDE.md` apenas aponta para cá.
 
 ---
 
-## Antes de qualquer coisa: leia o STATE
-
-`.specs/project/STATE.md` é a memória do projeto. O topo dele diz em que ponto o trabalho está **agora**, e a lista de decisões (AD-xxx) diz por que cada escolha foi feita — incluindo as que foram revogadas depois.
-
-Não presuma o estado a partir do código: já aconteceu de o ROADMAP dizer "não implementado" sobre algo pronto no mesmo dia. Quando encontrar essa divergência, corrija o documento.
-
-**Estado atual (2026-07-28):** **nenhuma task de código está aberta nas 13 features.** As duas mais novas — `generated-types` e `frontend-testing` — saíram na run 001 da skill `spec-loop` e fecharam os dois concerns mais antigos da base: `src/types.ts` agora é **gerado** (C-03) e o frontend tem **63 testes** (C-04). O que sobra é **verificação**, e ela não é formalidade: as três últimas sessões de UAT acharam três defeitos reais que nenhum gate automatizado pegaria (AD-046, AD-047, AD-050).
-
-O que continua aberto, em ordem de quem consegue fazer:
-
-- **Só o mantenedor:** publicar uma release nova a partir de `master` — a `v0.2.0` marcada como "Latest" é anterior ao M9 e está quebrada em runtime (AD-048); instalar sem direitos de administrador e aplicar um update de verdade (T24 do M8); instalar com a rede desligada e conversar (T22 do M9); e o AppImage, que falhou na v0.3.0 e só se prova num runner Linux.
-- **Um defeito conhecido, sem solução medida:** um documento irrelevante **continua entrando** no prompt — a AD-050 impediu que ele desloque um acerto melhor, não que ele entre. O limiar absoluto está descartado por medição (janela de 0,0073); qualquer tentativa nova precisa de corpus maior que um PDF.
-- **Um defeito de produção achado por teste, ainda não corrigido:** `sendMessage` perde na tela o erro que acabou de gravar, porque o `finally` chama `loadChats()` e ele abre com `error: null`. O usuário vê silêncio. Está fixado como teste de caracterização em `chatStore.test.ts` — consertar o store faz o teste **falhar**, de propósito.
-- **Cliques que qualquer agente pode dar:** o CRUD de chat do M1, as correções da AD-027, apagar um chat no meio de uma geração (C-14), e conferir se o badge de anexo mostra as fases intermediárias que a união de tipos revelou.
-
----
-
 ## Como este projeto trabalha
 
 Desenvolvimento dirigido por spec, com a estrutura em `.specs/`:
@@ -71,20 +54,24 @@ cd src-tauri && cargo check --lib
 # Frontend: tsc + Vite
 npm run build
 
-# Frontend: a suíte de testes (Vitest + jsdom + RTL)
+# Frontend: a suíte de testes — CONFIGURADA, VAZIA. `npm test` sai com
+# "No test files found" (exit 1): não há um único *.test.ts(x) nesta árvore,
+# e o vitest.config.ts aponta para src/test/setup.ts e dois dobles que não existem.
 npm test
 
 # Scripts de release (Node puro)
 npm run test:scripts
 
-# Regenerar src/types.ts depois de mexer numa struct da fronteira
-cd src-tauri && cargo test --lib types_export -- --ignored
+# NÃO EXISTE nesta árvore: src-tauri/src/types_export.rs não está em commit nenhum.
+# src/types.ts é escrito à MÃO. O comando abaixo falha; está aqui só para
+# ninguém procurá-lo de novo (medido em 2026-09-05, AD-054).
+# cd src-tauri && cargo test --lib types_export -- --ignored
 
 # Rodar o app de verdade
 npm run tauri dev
 ```
 
-`cargo test --lib` está em **181 passando / 0 falhas / 16 ignorados** (medido em 2026-07-28). O frontend também tem suíte desde 2026-07-28: `npm test` está em **63 passando em 8 arquivos**. Se qualquer um dos números cair, cada teste perdido precisa de justificativa — remoção legítima (o código que ele testava saiu) é aceitável; deleção silenciosa não.
+`cargo test --lib` está em **195 passando / 0 falhas / 15 ignorados** (medido em 2026-09-05, no fim da execução do M10.1). **O frontend não tem suíte:** `npm test` sai com *"No test files found"* (exit 1) — zero testes em zero arquivos. Os números anteriores desta linha (181/0/16 e 63 testes em 8 arquivos, de 2026-07-28) foram **medidos e desmentidos** em 2026-09-05: o baseline real antes do M10.1 era **177 / 0 / 15**. `npm run test:scripts` está em **49** e esse batia. Se qualquer um dos números cair, cada teste perdido precisa de justificativa — remoção legítima (o código que ele testava saiu) é aceitável; deleção silenciosa não.
 
 Este número é baseline, então mantenha-o medido: ele ficou parado em 146 por várias sessões enquanto a suíte crescia, e um baseline defasado não detecta perda nenhuma — que é exatamente o que ele existe para fazer.
 
@@ -132,7 +119,7 @@ O segundo formato é o que impede um teste de encostar por acidente nos dados do
 
 ## Banco de dados
 
-Migrações versionadas por `PRAGMA user_version`, numa lista ordenada em `db.rs`, cada uma em transação. **A próxima é a 9** — a lista `MIGRATIONS` termina hoje na 8 (`MIGRATION_8_CHAT_MEMORY`, o toggle de memória do M6).
+Migrações versionadas por `PRAGMA user_version`, numa lista ordenada em `db.rs`, cada uma em transação. **A próxima é a 10** — a lista `MIGRATIONS` termina hoje na 9 (`MIGRATION_9_BOOKS`, a tabela `books` do M10.1; a 8 é `MIGRATION_8_CHAT_MEMORY`).
 
 Confira o número na lista antes de escrever a migração, nunca aqui: esta linha já esteve errada, apontando a 8 depois de ela ter sido gasta. Duas migrações com o mesmo número não colidem em compilação — a segunda simplesmente nunca roda, porque o `user_version` já passou dela.
 
@@ -154,7 +141,7 @@ Detalhe completo em `.specs/codebase/CONVENTIONS.md`. O essencial:
 - Arquivos Rust `snake_case.rs`; comandos Tauri sempre em arquivo com sufixo `_commands`.
 - Componentes React `PascalCase.tsx`, um por arquivo. Wrappers de `invoke` em `*Api.ts`, stores Zustand em `*Store.ts`.
 - Campos que cruzam a fronteira Rust↔TS são `snake_case` dos dois lados (o serde não renomeia) — `src/types.ts` quebra o camelCase de propósito. A exceção são os **parâmetros** de `invoke()`, que vão camelCase e chegam snake_case; o Tauri converte.
-- `src/types.ts` é **gerado**, não escrito (desde 2026-07-28, feature `generated-types`, que fechou o C-03). Mudou uma struct que cruza a fronteira? Regenere com `cd src-tauri && cargo test --lib types_export -- --ignored` e commite o arquivo. O gate `types_export::tests::types_ts_matches_rust_structs` falha se você esquecer — e ele é a **única** coisa que fala: uma divergência de tipo deixa `cargo check` e `npm run build` os dois limpos.
+- `src/types.ts` é **escrito à mão**, e **não há gate nenhum sobre ele**. Isto contradiz o que esta linha dizia até 2026-09-05 ("gerado desde 2026-07-28 pela feature `generated-types`"): `src-tauri/src/types_export.rs` **não existe em commit algum** deste repositório, e portanto o gate `types_export::tests::types_ts_matches_rust_structs` também não. Mudou uma struct que cruza a fronteira? **Confira os campos um a um** — uma divergência de tipo deixa `cargo check` e `npm run build` os dois limpos e ninguém avisa. A feature `generated-types` continua documentada em `.specs/features/`, e é spec sem código (AD-054).
 
 ---
 

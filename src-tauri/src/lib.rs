@@ -1,5 +1,7 @@
 // SPEC: embedded-runtime (EMBED-06), self-contained-runtime (SELF-01, SELF-18),
-//       conversation-memory (MEM-14, MEM-17)
+//       conversation-memory (MEM-14, MEM-17),
+//       book-library (LIB-02, LIB-03, LIB-04, LIB-05, LIB-06, LIB-07, LIB-08,
+//       LIB-09, LIB-10, LIB-11, LIB-12)
 
 mod chat;
 mod chat_commands;
@@ -8,6 +10,7 @@ mod config;
 mod config_commands;
 mod db;
 mod document_commands;
+mod library_commands;
 mod runtime_commands;
 mod models;
 mod providers;
@@ -146,6 +149,10 @@ pub fn run() {
             document_commands::import_documents,
             document_commands::list_documents,
             document_commands::delete_document,
+            library_commands::import_books,
+            library_commands::list_books,
+            library_commands::delete_book,
+            library_commands::library_path,
             update_commands::check_for_update,
             update_commands::install_update,
             update_commands::skip_update_version,
