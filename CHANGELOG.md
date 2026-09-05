@@ -4,19 +4,17 @@ Todas as mudanças relevantes deste projeto são registradas aqui.
 O formato segue [Conventional Commits](https://www.conventionalcommits.org/)
 e o versionamento segue [SemVer](https://semver.org/lang/pt-BR/).
 
-## [0.2.0] - 2026-07-27
-
-### Outros
-
-- Atualiza o README.md para refletir mudanças na descrição do ReadMe, destacando a operação local do chat de IA, a base de conhecimento, e a privacidade dos dados. Remove seções obsoletas e reorganiza informações sobre pré-requisitos e funcionalidades, enfatizando a experiência do usuário e a simplicidade de uso do instalador.
-
-## [0.1.1] - 2026-07-26
+## [0.0.2] - 2026-09-05
 
 ### Correções
 
 - **embedded-runtime:** Make context/GPU config actually reach llama-server
 - **release:** Update release workflow to exclude tauri.conf.json from version bump
 - **ci:** Update Node.js version and test script glob pattern
+- **release:** Correct asset URL handling in patch-latest-json script
+- **runtime:** Update .gitignore to properly include resources directory
+- **chat:** Ensure chat deletion cancels ongoing generations
+- **tests:** Update signature and public key files after project rename
 
 ### Documentação
 
@@ -33,6 +31,7 @@ e o versionamento segue [SemVer](https://semver.org/lang/pt-BR/).
 
 - Initial commit of M1+M2 baseline (shell, config, storage, i18n)
 - **ci, release:** Upgrade GitHub Actions to v5 and implement cleanup job
+- Initial commit
 
 ### Novidades
 
@@ -72,17 +71,24 @@ e o versionamento segue [SemVer](https://semver.org/lang/pt-BR/).
 - **chat:** Enhance chat functionality with global RAG and attachment handling
 - **update:** Implement automatic update checks and user settings
 - **runtime:** Implement self-contained runtime and sidecar lifecycle management
+- **runtime:** Update .gitignore and package.json for vendor management
+- Add SVG icons and version bump script
 
 ### Outros
 
 - Revert "chore(release): v0.1.1"
 
 This reverts commit 5e3dec6f719f4d32d553cb9d3b91a098e646c5d1.
+- Atualiza o README.md para refletir mudanças na descrição do LocalMind, destacando a operação local do chat de IA, a base de conhecimento, e a privacidade dos dados. Remove seções obsoletas e reorganiza informações sobre pré-requisitos e funcionalidades, enfatizando a experiência do usuário e a simplicidade de uso do instalador.
+- Revert "chore(release): v0.3.0"
+
+This reverts commit c0845e68e87144728653618bcb83356629a309c2.
 
 ### Refatoração
 
 - **db:** Centralize require_conn and check connections concurrently
 - Remove obsolete connection and model command files
+- Rename project from LocalMind to ReadMe
 
 ### Testes
 
