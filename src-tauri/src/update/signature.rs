@@ -116,6 +116,12 @@ mod tests {
     // these tests — it signs nothing that ships, so it is safe in the repo.
     const PUBKEY: &str = include_str!("../../tests/fixtures/updater_test.pub");
     const SIGNATURE: &str = include_str!("../../tests/fixtures/sample.bin.sig");
+    // Its bytes are pinned by the signature next to it, not by their meaning.
+    // A repo-wide rename rewrote the words inside it ("LocalMind" -> "ReadMe",
+    // 33 bytes -> 30) and `a_real_signed_file_verifies` failed with "signature
+    // does not match the downloaded file". Editing this file means re-signing
+    // it and replacing `sample.bin.sig` and `updater_test.pub` in the same
+    // commit — the three only mean anything together.
     const SAMPLE: &[u8] = include_bytes!("../../tests/fixtures/sample.bin");
 
     /// Guards the key that actually ships.
