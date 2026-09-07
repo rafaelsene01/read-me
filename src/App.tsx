@@ -1,8 +1,8 @@
-// SPEC: book-library (LIB-09)
+// SPEC: book-library (LIB-09), book-reader (READ-15)
 
 import { useEffect } from "react";
 import { Sidebar } from "./components/Sidebar/Sidebar";
-import { ChatPanel } from "./components/Chat/ChatPanel";
+import { ReaderPanel } from "./components/Reader/ReaderPanel";
 import { SettingsPanel } from "./components/Settings/SettingsPanel";
 import { RuntimePanel } from "./components/Runtime/RuntimePanel";
 import { LibraryPanel } from "./components/Library/LibraryPanel";
@@ -54,7 +54,7 @@ function App() {
         ) : activeView === "library" ? (
           <LibraryPanel />
         ) : (
-          <ChatPanel />
+          <ReaderPanel />
         )}
       </div>
     </div>

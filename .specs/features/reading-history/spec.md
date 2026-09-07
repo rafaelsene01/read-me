@@ -1,7 +1,7 @@
 # Histórico de leitura — Specification
 
 **Milestone:** M10 — Pivô para leitor
-**Status:** requisitos escritos (2026-09-04). **Sem `design.md` e sem `tasks.md`, de propósito** — ver "Bloqueador" abaixo. Nada implementado.
+**Status:** requisitos escritos (2026-09-04). **Bloqueador levantado em 2026-09-05** — a âncora de posição foi decidida em `.specs/features/book-reader/`, e é de lá que vêm as tasks. **Backend em pé desde 2026-09-06** (T7 da `book-reader`): as colunas, os quatro comandos e o SQL do histórico existem e têm teste. **Nada do frontend existe** — a lateral continua listando chats.
 
 ## Problem Statement
 
@@ -32,12 +32,12 @@ Por isso os requisitos ficam registrados aqui, com IDs rastreáveis, e as tasks 
 
 | Assunção | Escolha adotada | Racional |
 | --- | --- | --- |
-| O que é uma "posição" | **Não decidido — é o bloqueador desta spec** | Depende do formato em que o leitor remonta o livro. Decidir antes seria chutar o esquema. |
-| Onde a posição mora | Coluna(s) numa migração ≥ 10, na tabela `books` | A tabela já existe depois da `book-library`; a posição é atributo do livro, não entidade nova. O número exato da migração se confere na lista em `db.rs` na hora, nunca aqui. |
+| O que é uma "posição" | **Índice de página (base 0)** — decidido em 2026-09-05 pela `book-reader` | Ficou em aberto enquanto não havia leitor: o significado dependia de como o livro seria remontado. A `book-reader` remonta em páginas persistidas e determinísticas, então a página é ao mesmo tempo o que o usuário vê e o que o app grava. Offset de caractere criaria uma segunda fonte de verdade para a mesma coisa. |
+| Onde a posição mora | `books.last_page` e `books.last_opened_at`, na migração **10** | A tabela já existe depois da `book-library`; a posição é atributo do livro, não entidade nova. O número exato da migração se confere na lista em `db.rs` na hora, nunca aqui. |
 | O histórico substitui a lista de chats ou convive | Substitui | Foi o que o usuário pediu. A `chat-messaging` fica marcada como revogada pela AD-052. |
 | Livro importado e nunca aberto aparece no histórico | Não | Histórico é do que foi lido; a biblioteca é que lista tudo. |
 
-Open questions: uma, e ela bloqueia as tasks — **qual é a âncora da posição de leitura**. Só o design do leitor responde.
+Open questions: nenhuma. A única que existia — **qual é a âncora da posição de leitura** — foi respondida em 2026-09-05 pelo design da `book-reader`: índice de página.
 
 ---
 
@@ -76,9 +76,13 @@ Open questions: uma, e ela bloqueia as tasks — **qual é a âncora da posiçã
 
 ---
 
-## Bloqueador
+## Bloqueador — **levantado em 2026-09-05**
 
-`design.md` e `tasks.md` desta feature **só podem ser escritos depois** que o design do leitor definir a âncora de posição. Escrever a migração antes disso é gastar um número de migração num esquema que vai mudar.
+`design.md` e `tasks.md` desta feature **só podiam ser escritos depois** que o design do leitor definisse a âncora de posição. Escrever a migração antes disso seria gastar um número de migração num esquema que ia mudar.
+
+**A âncora foi decidida em `.specs/features/book-reader/`**: a posição de leitura é o **índice de página** (base 0) na paginação persistida do livro, gravada em `books.last_page` pela migração 10. Consequência: esta feature **não ganha `design.md` nem `tasks.md` próprios** — os oito HIST-xx são implementados pelas tasks da `book-reader`, e a rastreabilidade abaixo aponta para lá. Isso é deliberado: dois `tasks.md` para o mesmo código seriam duas fontes de verdade.
+
+⚠️ **Executado até aqui (2026-09-06):** a migração 10 (T2), o layout em disco e o processamento (T5/T16/T17) e os comandos de leitura e histórico (T7) — `open_book`, `save_reading_position`, `get_book_page`, `list_reading_history`, em `src-tauri/src/reader_commands.rs`, com 8 testes contra banco em memória e pasta temporária. **O frontend passou a existir** (T8-T11, T15): `readerStore`, `ReaderPanel`, `ReadingList` na lateral e a rota `reader`, com `npm run build` **exit 0**. Continua valendo o essencial: **nenhum comando Tauri rodou** (não há runner de integração neste projeto), **não há suíte de frontend** (`npm test` sai com *"No test files found"*, exit 1) e **nenhuma tela foi vista** — todo HIST-xx que depende de comportamento espera a T13.
 
 ---
 
@@ -86,13 +90,13 @@ Open questions: uma, e ela bloqueia as tasks — **qual é a âncora da posiçã
 
 | Requirement ID | Story | Phase | Status |
 | --- | --- | --- | --- |
-| HIST-01 | P1: Sidebar lista leituras, não conversas | pending | pending |
-| HIST-02 | P1: Ordenação por abertura mais recente | pending | pending |
-| HIST-03 | P1: Estado vazio apontando para a Biblioteca | pending | pending |
-| HIST-04 | P1: Registrar a última abertura | pending | pending |
-| HIST-05 | P1: Persistir a posição durante a leitura | pending | pending |
-| HIST-06 | P1: Reabrir na posição salva | pending | pending |
-| HIST-07 | P1: Livro nunca aberto começa do início | pending | pending |
-| HIST-08 | P1: Remover o livro remove o histórico | pending | pending |
+| HIST-01 | P1: Sidebar lista leituras, não conversas | **`book-reader` T11**: `src/components/Sidebar/ReadingList.tsx` (novo) entrou no lugar do `ChatList` na `Sidebar`, consumindo `list_reading_history` | **não verificado — só compila.** `npm run build` **exit 0**. O `ChatList.tsx` foi **apagado** (o `tsc` o derrubou ao tirar `"chat"` do `ActiveView`), então não sobra lista de conversas nem órfã. **A lateral nunca foi vista na tela** (T13) |
+| HIST-02 | P1: Ordenação por abertura mais recente | `book-reader` T7 escreveu `reading_history` (`WHERE last_opened_at IS NOT NULL ORDER BY last_opened_at DESC`) | **verificado como SQL** — `the_history_lists_the_most_recently_opened_first` em **257/0/16** (2026-09-06), com timestamps escritos à mão. pending — **a lateral que consome isso é a T11** · **T11:** a `ReadingList` mostra a lista **na ordem em que o comando a devolve**, sem reordenar no cliente, e recarrega depois de abrir um livro. **Só compila** — a ordem na tela é T13 |
+| HIST-03 | P1: Estado vazio apontando para a Biblioteca | **`book-reader` T11**: com zero entradas a `ReadingList` mostra `reader.historyEmpty` — *"Nenhum livro aberto ainda. Importe um na Biblioteca."* | **não verificado — só compila.** O texto existe nos dois idiomas (paridade **206/206**), mas **ninguém o viu**, e que ele apareça só quando o histórico está vazio é T13 |
+| HIST-04 | P1: Registrar a última abertura | `book-reader` T7: `open_position` grava `Utc::now().to_rfc3339()` | **verificado em unidade, com ressalva no próprio teste** — `opening_a_book_records_the_moment_it_was_opened` (257/0/16): a coluna deixa de ser nula e o valor relê como RFC 3339; **que o instante seja o certo é fé no relógio do sistema** |
+| HIST-05 | P1: Persistir a posição durante a leitura | `book-reader` T7: `save_position`, com o clamp no próprio SQL | **metade verificada (backend)** — `saving_a_position_persists_it` (257/0/16): gravar 2 deixa 2, gravar 999 deixa `page_count - 1`. pending — **quem grava enquanto a leitura avança é o store da T8/T9, com debounce**, e ele não existe · **T8/T9 escreveram o debounce** (`readerStore.goToPage` agenda 800 ms, `closeBook` faz *flush*) e **a T11 deu a rota** que finalmente monta quem o chama. **O debounce continua sem nunca ter disparado**: não há suíte de frontend e o app não foi aberto (T13) |
+| HIST-06 | P1: Reabrir na posição salva | `book-reader` T7: `open_position` devolve `last_page` clampado | **metade verificada (backend)** — `reopening_a_book_returns_the_saved_page` e `a_position_beyond_the_page_count_is_clamped_on_open` (257/0/16). pending — **reabrir pela tela é T11/T13** · **T11:** clicar numa entrada da lateral chama `readerStore.openBook`, que pede a posição ao backend em vez de adivinhá-la, e o idioma de leitura vem de `list_book_languages` (a `ReadingEntry` não carrega essa coluna). **Só compila**; fechar o app, reabrir e cair na página certa é T13, item 6 |
+| HIST-07 | P1: Livro nunca aberto começa do início | `book-reader` T7: `last_page` NULL → 0, e a abertura não grava posição | **verificado em unidade** — `a_book_never_opened_starts_at_the_first_page` (257/0/16): devolve 0 **e a coluna continua NULL**; `an_imported_book_never_opened_is_not_in_the_history` confere o outro lado, o livro importado fora do histórico |
+| HIST-08 | P1: Remover o livro remove o histórico | in tasks | pending — `book-reader` T2 |
 
 **ID format:** `HIST-[NUMBER]`

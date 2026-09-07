@@ -1,6 +1,6 @@
 // SPEC: app-shell (SHELL-04), chat-messaging (CHAT-06, CHAT-14),
 //       self-contained-runtime (SELF-01), conversation-memory (MEM-14, MEM-18),
-//       book-library (LIB-03, LIB-09)
+//       book-library (LIB-03, LIB-09), book-reader (READ-01, READ-05, READ-16, READ-30)
 
 export interface Chat {
   id: string;
@@ -136,8 +136,19 @@ export interface DocumentStatusEvent {
   error_message: string | null;
 }
 
-/** Mirrors `BookRecord` in library_commands.rs. A book is a plain file: no
- *  status, because nothing is processed after the copy (LIB-09). */
+/** Mirrors `BookStatus` in reader_commands.rs. Everything before `ready` is a
+ *  processing step. `translating` is deliberately absent: translating is work
+ *  *per language*, derived from the files in `<lang>/` against `page_count`. */
+export type BookStatus =
+  | "imported"
+  | "extracting"
+  | "paginating"
+  | "ready"
+  | "error";
+
+/** Mirrors `BookRecord` in library_commands.rs — the seven reader columns of
+ *  migration 10 included. **Hand-written, no gate** (AD-054): a divergence
+ *  leaves `cargo check` and `npm run build` both clean. */
 export interface BookRecord {
   id: string;
   /** The name on disk — a collision was already resolved to "livro (2).pdf". */
@@ -146,6 +157,61 @@ export interface BookRecord {
   format: string;
   size_bytes: number;
   imported_at: string;
+  /** The book's own folder under `library/`; null on a row the layout
+   *  migration has not moved yet (READ-32). */
+  folder: string | null;
+  status: BookStatus;
+  error_message: string | null;
+  /** 0 until the book is processed. */
+  page_count: number;
+  /** Language folder being read; null reads `original/` (READ-27). */
+  reading_language: string | null;
+  /** Zero-based, like every page index on this boundary. Null = never opened. */
+  last_page: number | null;
+  last_opened_at: string | null;
+}
+
+/** Mirrors `BookStatusEvent` in reader_commands.rs, delivered on `book-status`.
+ *  `language` is null outside a translation; inside one, `done` is the count of
+ *  pages already in `<lang>/` — absolute, so a resumed run does not restart the
+ *  bar at zero (READ-30). */
+export interface BookStatusEvent {
+  id: string;
+  status: BookStatus;
+  language: string | null;
+  done: number;
+  total: number;
+  error_message: string | null;
+}
+
+/** Mirrors `BookPage` in reader_commands.rs. `language` is the language the
+ *  text actually came from, which is **not** always the one that was asked
+ *  for: the original is served, and named, while that page's translation is
+ *  still missing (READ-12). */
+export interface BookPage {
+  /** Zero-based. The `{:04}.txt` files are base 1 and only Rust knows it. */
+  page: number;
+  page_count: number;
+  language: string;
+  text: string;
+}
+
+/** Mirrors `ReadingEntry` in reader_commands.rs — one line of the reading
+ *  history (HIST-02). `last_page` is zero-based and already clamped. */
+export interface ReadingEntry {
+  id: string;
+  filename: string;
+  page_count: number;
+  last_page: number;
+  last_opened_at: string;
+}
+
+/** Mirrors `BookLanguage` in reader_commands.rs. `pages` is counted from the
+ *  files on disk, never from the row, and the list includes `original`. */
+export interface BookLanguage {
+  language: string;
+  pages: number;
+  reading: boolean;
 }
 
 /** Same shape as `ImportResult`, with book rows instead of document rows: the

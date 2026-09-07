@@ -1,5 +1,9 @@
 # Memória de conversa (RAG híbrido) — Specification
 
+> ⛔ **Esta feature perdeu a porta em 2026-09-06, pela `book-reader` (T11) — decisão **AD-056**.** A memória de conversa só é exercitada conversando, e **o chat deixou de ter rota** (ver o aviso no topo de `chat-messaging/spec.md`). O toggle "usar a memória" vive dentro da tela de chat, que não é mais montada por `App.tsx`.
+>
+> **Nenhum requisito abaixo foi apagado.** O pipeline de memória, o namespace `memory:<chat_id>` e os testes continuam intactos; o que saiu foi o caminho na UI. Remoção física: gatilho da AD-052 item 4, **ainda não disparado** (exige a T13).
+
 **Milestone:** M6
 **Contexto das decisões:** `.specs/features/conversation-memory/context.md`
 
@@ -180,51 +184,51 @@ exercitado num app aberto — a diferença é o que a T9 fecha.
 
 | Requirement ID | Story | Tasks | Status |
 | --- | --- | --- | --- |
-| MEM-01 | P1: Lembra do que saiu da janela | T2, T3 | ✅ **Verificado no app (2026-07-27)** — 9 turnos reais gravados numa conversa, `vectors/` crescendo ~9,5 KB por turno; com o toggle desligado o crescimento para em zero, o que prova que era a memória escrevendo |
-| MEM-02 | P1: Lembra do que saiu da janela | T3 | ⚠️ Implementado — roda em `spawn`; o efeito na latência **não foi medido** |
-| MEM-03 | P1: Lembra do que saiu da janela | T2, T3 | ✅ Implementado — `should_record_turn` e `pair_turns` cobrem as quatro vias, 9 testes |
-| MEM-04 | P1: Lembra do que saiu da janela | T4 | ✅ **Verificado no app (2026-07-27)** — numa conversa de 32 mensagens (fora das 20 do `RECENT_HISTORY_LIMIT`, ou seja, o turno plantado não estava no prompt verbatim), a pergunta *"com que apelido eu batizei o trabalho, e quanto dinheiro eu disse que tinha sido liberado?"* — sem uma palavra em comum com o turno guardado — foi respondida com **"Pantera Cinzenta"** e **47 mil reais**. A mesma pergunta falhara 3× antes das correções da AD-047 |
-| MEM-05 | P1: Lembra do que saiu da janela | T4 | ✅ **Verificado** — `recall_blocks`, 4 testes. A dedup estava **correta e mortal**: aplicada depois do corte para 1 candidato, descartava a única vaga sempre que o vizinho mais próximo era a própria pergunta repetida (AD-047). Hoje o filtro roda antes do `take` |
-| MEM-06 | P1: Lembra do que saiu da janela | T4 | ✅ Implementado — preâmbulo e marcador próprios, 1 teste |
-| MEM-07 | P1: Não sai da conversa | T2, T5 | ✅ **Verificado** contra LanceDB real |
-| MEM-08 | P1: Não sai da conversa | T2, T4 | ✅ **Verificado** contra LanceDB real |
-| MEM-09 | P1: Não sai da conversa | T5 | ⚠️ **Parcial** — as duas chamadas de `delete_namespace` foram verificadas contra LanceDB real; que o `delete_chat` faça as duas é código sem teste (precisa de `AppHandle`) |
-| MEM-10 | P1: Orçamento entre as camadas | T4 | ✅ Implementado — a memória é servida depois de `fit_history`, mas com **15% do orçamento reservado** antes dele e devolvido em seguida, para que "o que sobra" nunca seja zero (AD-047). 4 testes |
-| MEM-11 | P1: Orçamento entre as camadas | T4 | ✅ Implementado — orçamento zerado devolve lista vazia, sem erro |
-| MEM-12 | P1: Orçamento entre as camadas | T4 | ✅ Implementado — `MEMORY_TOP_K` separado do `TOP_K`, e **reduzido de 2 para 1** depois de medir que o piso de relevância não filtra nada nesta camada (Open Question #1 do design) |
-| MEM-13 | P1: Orçamento entre as camadas | T4 | ⚠️ Implementado — reusa o `retrieval_error`, que já existia; o caminho de falha **não foi provocado** |
-| MEM-14 | P1: Ligar e desligar por conversa | T1, T3, T7 | ✅ **Verificado no app (2026-07-27)** nos dois sentidos: com o toggle desligado o `vectors/` não cresceu **um byte** em 12 turnos; e numa conversa cuja memória **existia** no banco, desligar bastou para o modelo responder *"não tenho a capacidade de lembrar interações anteriores"* |
-| MEM-15 | P1: Ligar e desligar por conversa | T1 | ✅ **Verificado na tela (2026-07-27)** — chat recém-criado nasce com o interruptor marcado, lido do DOM; mais os 2 testes de migração |
-| MEM-16 | P1: Ligar e desligar por conversa | T1, T3, T7 | ✅ **Verificado no app (2026-07-27)** — o interruptor foi clicado numa conversa real e a gravação parou: `vectors/` ficou em 5.748.117 bytes antes e depois do turno seguinte, byte a byte |
-| MEM-17 | P2: Backfill sob demanda | T2, T6 | ✅ **Verificado no app (2026-07-27)** — botão clicado numa conversa de 12 turnos: `12 turno(s) adicionado(s)` em ~1,6 s, `vectors/` +133.963 B, e a pergunta sobre o turno 1 passou a ser respondida |
-| MEM-18 | P2: Backfill sob demanda | T6, T7 | ✅ **Verificado na tela (2026-07-27)** — `Indexando histórico… (3/15)` lido do DOM durante a execução, não deduzido do `emit` |
-| MEM-19 | P2: Backfill sob demanda | T2 | ✅ **Verificado** contra LanceDB real — reindexar deixa um registro |
-| MEM-20 | P2: Backfill sob demanda | T2, T7 | ✅ Implementado — conversa sem par completo devolve 0, 2 testes |
+| MEM-01 | P1: Lembra do que saiu da janela | T2, T3 | ✅ **Verificado no app (2026-07-27)** — 9 turnos reais gravados numa conversa, `vectors/` crescendo ~9,5 KB por turno; com o toggle desligado o crescimento para em zero, o que prova que era a memória escrevendo ⛔ **Sem porta na UI desde 2026-09-06 (AD-056)** — só se exercita conversando, e o chat não tem rota. |
+| MEM-02 | P1: Lembra do que saiu da janela | T3 | ⚠️ Implementado — roda em `spawn`; o efeito na latência **não foi medido** ⛔ **Sem porta na UI desde 2026-09-06 (AD-056)** — só se exercita conversando, e o chat não tem rota. |
+| MEM-03 | P1: Lembra do que saiu da janela | T2, T3 | ✅ Implementado — `should_record_turn` e `pair_turns` cobrem as quatro vias, 9 testes ⛔ **Sem porta na UI desde 2026-09-06 (AD-056)** — só se exercita conversando, e o chat não tem rota. |
+| MEM-04 | P1: Lembra do que saiu da janela | T4 | ✅ **Verificado no app (2026-07-27)** — numa conversa de 32 mensagens (fora das 20 do `RECENT_HISTORY_LIMIT`, ou seja, o turno plantado não estava no prompt verbatim), a pergunta *"com que apelido eu batizei o trabalho, e quanto dinheiro eu disse que tinha sido liberado?"* — sem uma palavra em comum com o turno guardado — foi respondida com **"Pantera Cinzenta"** e **47 mil reais**. A mesma pergunta falhara 3× antes das correções da AD-047 ⛔ **Sem porta na UI desde 2026-09-06 (AD-056)** — só se exercita conversando, e o chat não tem rota. |
+| MEM-05 | P1: Lembra do que saiu da janela | T4 | ✅ **Verificado** — `recall_blocks`, 4 testes. A dedup estava **correta e mortal**: aplicada depois do corte para 1 candidato, descartava a única vaga sempre que o vizinho mais próximo era a própria pergunta repetida (AD-047). Hoje o filtro roda antes do `take` ⛔ **Sem porta na UI desde 2026-09-06 (AD-056)** — só se exercita conversando, e o chat não tem rota. |
+| MEM-06 | P1: Lembra do que saiu da janela | T4 | ✅ Implementado — preâmbulo e marcador próprios, 1 teste ⛔ **Sem porta na UI desde 2026-09-06 (AD-056)** — só se exercita conversando, e o chat não tem rota. |
+| MEM-07 | P1: Não sai da conversa | T2, T5 | ✅ **Verificado** contra LanceDB real ⛔ **Sem porta na UI desde 2026-09-06 (AD-056)** — só se exercita conversando, e o chat não tem rota. |
+| MEM-08 | P1: Não sai da conversa | T2, T4 | ✅ **Verificado** contra LanceDB real ⛔ **Sem porta na UI desde 2026-09-06 (AD-056)** — só se exercita conversando, e o chat não tem rota. |
+| MEM-09 | P1: Não sai da conversa | T5 | ⚠️ **Parcial** — as duas chamadas de `delete_namespace` foram verificadas contra LanceDB real; que o `delete_chat` faça as duas é código sem teste (precisa de `AppHandle`) ⛔ **Sem porta na UI desde 2026-09-06 (AD-056)** — só se exercita conversando, e o chat não tem rota. |
+| MEM-10 | P1: Orçamento entre as camadas | T4 | ✅ Implementado — a memória é servida depois de `fit_history`, mas com **15% do orçamento reservado** antes dele e devolvido em seguida, para que "o que sobra" nunca seja zero (AD-047). 4 testes ⛔ **Sem porta na UI desde 2026-09-06 (AD-056)** — só se exercita conversando, e o chat não tem rota. |
+| MEM-11 | P1: Orçamento entre as camadas | T4 | ✅ Implementado — orçamento zerado devolve lista vazia, sem erro ⛔ **Sem porta na UI desde 2026-09-06 (AD-056)** — só se exercita conversando, e o chat não tem rota. |
+| MEM-12 | P1: Orçamento entre as camadas | T4 | ✅ Implementado — `MEMORY_TOP_K` separado do `TOP_K`, e **reduzido de 2 para 1** depois de medir que o piso de relevância não filtra nada nesta camada (Open Question #1 do design) ⛔ **Sem porta na UI desde 2026-09-06 (AD-056)** — só se exercita conversando, e o chat não tem rota. |
+| MEM-13 | P1: Orçamento entre as camadas | T4 | ⚠️ Implementado — reusa o `retrieval_error`, que já existia; o caminho de falha **não foi provocado** ⛔ **Sem porta na UI desde 2026-09-06 (AD-056)** — só se exercita conversando, e o chat não tem rota. |
+| MEM-14 | P1: Ligar e desligar por conversa | T1, T3, T7 | ✅ **Verificado no app (2026-07-27)** nos dois sentidos: com o toggle desligado o `vectors/` não cresceu **um byte** em 12 turnos; e numa conversa cuja memória **existia** no banco, desligar bastou para o modelo responder *"não tenho a capacidade de lembrar interações anteriores"* ⛔ **Sem porta na UI desde 2026-09-06 (AD-056)** — só se exercita conversando, e o chat não tem rota. |
+| MEM-15 | P1: Ligar e desligar por conversa | T1 | ✅ **Verificado na tela (2026-07-27)** — chat recém-criado nasce com o interruptor marcado, lido do DOM; mais os 2 testes de migração ⛔ **Sem porta na UI desde 2026-09-06 (AD-056)** — só se exercita conversando, e o chat não tem rota. |
+| MEM-16 | P1: Ligar e desligar por conversa | T1, T3, T7 | ✅ **Verificado no app (2026-07-27)** — o interruptor foi clicado numa conversa real e a gravação parou: `vectors/` ficou em 5.748.117 bytes antes e depois do turno seguinte, byte a byte ⛔ **Sem porta na UI desde 2026-09-06 (AD-056)** — só se exercita conversando, e o chat não tem rota. |
+| MEM-17 | P2: Backfill sob demanda | T2, T6 | ✅ **Verificado no app (2026-07-27)** — botão clicado numa conversa de 12 turnos: `12 turno(s) adicionado(s)` em ~1,6 s, `vectors/` +133.963 B, e a pergunta sobre o turno 1 passou a ser respondida ⛔ **Sem porta na UI desde 2026-09-06 (AD-056)** — só se exercita conversando, e o chat não tem rota. |
+| MEM-18 | P2: Backfill sob demanda | T6, T7 | ✅ **Verificado na tela (2026-07-27)** — `Indexando histórico… (3/15)` lido do DOM durante a execução, não deduzido do `emit` ⛔ **Sem porta na UI desde 2026-09-06 (AD-056)** — só se exercita conversando, e o chat não tem rota. |
+| MEM-19 | P2: Backfill sob demanda | T2 | ✅ **Verificado** contra LanceDB real — reindexar deixa um registro ⛔ **Sem porta na UI desde 2026-09-06 (AD-056)** — só se exercita conversando, e o chat não tem rota. |
+| MEM-20 | P2: Backfill sob demanda | T2, T7 | ✅ Implementado — conversa sem par completo devolve 0, 2 testes ⛔ **Sem porta na UI desde 2026-09-06 (AD-056)** — só se exercita conversando, e o chat não tem rota. |
 
 **Mapa ID → critério:**
 
 | ID | O que afirma |
 | --- | --- |
-| MEM-01 | Turno completo vira memória ao fim da geração |
-| MEM-02 | A indexação não atrasa a resposta |
-| MEM-03 | Geração cancelada ou com erro não vira memória |
-| MEM-04 | Recuperação dos turnos antigos relevantes da própria conversa |
-| MEM-05 | Turno já presente no histórico verbatim não é recuperado de novo |
-| MEM-06 | Bloco de memória é rotulado como conversa, não como documento |
-| MEM-07 | Namespace exclusivo por conversa, distinto do de anexos e do global |
-| MEM-08 | A recuperação de memória só consulta a própria conversa |
-| MEM-09 | Excluir o chat apaga a memória junto |
-| MEM-10 | A memória consome só o que sobra depois de documentos e histórico |
-| MEM-11 | Orçamento esgotado antes da memória não é erro |
-| MEM-12 | Teto próprio de turnos recuperados |
-| MEM-13 | Falha de memória avisa e não bloqueia a resposta |
-| MEM-14 | Desligado para de recuperar **e** de gravar |
-| MEM-15 | Chat novo nasce com memória ligada |
-| MEM-16 | O toggle persiste por conversa |
-| MEM-17 | Backfill embedda os pares já gravados de um chat |
-| MEM-18 | Progresso do backfill por evento |
-| MEM-19 | Backfill repetido substitui, não duplica |
-| MEM-20 | Conversa sem par completo termina o backfill sem erro |
+| MEM-01 | Turno completo vira memória ao fim da geração ⛔ **Sem porta na UI desde 2026-09-06 (AD-056)** — só se exercita conversando, e o chat não tem rota. |
+| MEM-02 | A indexação não atrasa a resposta ⛔ **Sem porta na UI desde 2026-09-06 (AD-056)** — só se exercita conversando, e o chat não tem rota. |
+| MEM-03 | Geração cancelada ou com erro não vira memória ⛔ **Sem porta na UI desde 2026-09-06 (AD-056)** — só se exercita conversando, e o chat não tem rota. |
+| MEM-04 | Recuperação dos turnos antigos relevantes da própria conversa ⛔ **Sem porta na UI desde 2026-09-06 (AD-056)** — só se exercita conversando, e o chat não tem rota. |
+| MEM-05 | Turno já presente no histórico verbatim não é recuperado de novo ⛔ **Sem porta na UI desde 2026-09-06 (AD-056)** — só se exercita conversando, e o chat não tem rota. |
+| MEM-06 | Bloco de memória é rotulado como conversa, não como documento ⛔ **Sem porta na UI desde 2026-09-06 (AD-056)** — só se exercita conversando, e o chat não tem rota. |
+| MEM-07 | Namespace exclusivo por conversa, distinto do de anexos e do global ⛔ **Sem porta na UI desde 2026-09-06 (AD-056)** — só se exercita conversando, e o chat não tem rota. |
+| MEM-08 | A recuperação de memória só consulta a própria conversa ⛔ **Sem porta na UI desde 2026-09-06 (AD-056)** — só se exercita conversando, e o chat não tem rota. |
+| MEM-09 | Excluir o chat apaga a memória junto ⛔ **Sem porta na UI desde 2026-09-06 (AD-056)** — só se exercita conversando, e o chat não tem rota. |
+| MEM-10 | A memória consome só o que sobra depois de documentos e histórico ⛔ **Sem porta na UI desde 2026-09-06 (AD-056)** — só se exercita conversando, e o chat não tem rota. |
+| MEM-11 | Orçamento esgotado antes da memória não é erro ⛔ **Sem porta na UI desde 2026-09-06 (AD-056)** — só se exercita conversando, e o chat não tem rota. |
+| MEM-12 | Teto próprio de turnos recuperados ⛔ **Sem porta na UI desde 2026-09-06 (AD-056)** — só se exercita conversando, e o chat não tem rota. |
+| MEM-13 | Falha de memória avisa e não bloqueia a resposta ⛔ **Sem porta na UI desde 2026-09-06 (AD-056)** — só se exercita conversando, e o chat não tem rota. |
+| MEM-14 | Desligado para de recuperar **e** de gravar ⛔ **Sem porta na UI desde 2026-09-06 (AD-056)** — só se exercita conversando, e o chat não tem rota. |
+| MEM-15 | Chat novo nasce com memória ligada ⛔ **Sem porta na UI desde 2026-09-06 (AD-056)** — só se exercita conversando, e o chat não tem rota. |
+| MEM-16 | O toggle persiste por conversa ⛔ **Sem porta na UI desde 2026-09-06 (AD-056)** — só se exercita conversando, e o chat não tem rota. |
+| MEM-17 | Backfill embedda os pares já gravados de um chat ⛔ **Sem porta na UI desde 2026-09-06 (AD-056)** — só se exercita conversando, e o chat não tem rota. |
+| MEM-18 | Progresso do backfill por evento ⛔ **Sem porta na UI desde 2026-09-06 (AD-056)** — só se exercita conversando, e o chat não tem rota. |
+| MEM-19 | Backfill repetido substitui, não duplica ⛔ **Sem porta na UI desde 2026-09-06 (AD-056)** — só se exercita conversando, e o chat não tem rota. |
+| MEM-20 | Conversa sem par completo termina o backfill sem erro ⛔ **Sem porta na UI desde 2026-09-06 (AD-056)** — só se exercita conversando, e o chat não tem rota. |
 
 **Status values:** Pending → In Design → In Tasks → Implementing → Verified
 **Coverage:** 20 no total, 20 mapeados para tasks, 0 sem task. **Atualizado em 2026-07-27, depois da

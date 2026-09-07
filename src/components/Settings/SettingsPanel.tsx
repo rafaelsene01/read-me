@@ -59,7 +59,7 @@ export function SettingsPanel() {
     <div className="flex flex-1 flex-col overflow-y-auto bg-[var(--bg-app)] text-[var(--text-primary)]">
       <div className="flex items-center gap-3 border-b border-[var(--border-color)] px-6 py-4">
         <button
-          onClick={() => setActiveView("chat")}
+          onClick={() => setActiveView("reader")}
           className="rounded-md p-1.5 text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
           title={t("settings.back")}
         >

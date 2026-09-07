@@ -1,3 +1,5 @@
+// SPEC: documents-rag (DOC-04), book-reader (READ-08)
+
 use std::path::Path;
 
 #[derive(Debug)]
@@ -58,7 +60,10 @@ pub fn extract_text(path: &Path) -> Result<String, ParseError> {
     Ok(text)
 }
 
-fn extract_pdf(path: &Path) -> Result<String, ParseError> {
+/// `pub(crate)` so the reader extracts a PDF through this exact function:
+/// duplicating it would duplicate `rejoin_hyphenated_words`, and the copy that
+/// drifted would put broken words in the book (READ-08).
+pub(crate) fn extract_pdf(path: &Path) -> Result<String, ParseError> {
     let text = super::pdfium::extract_text(path).map_err(ParseError::ReadFailed)?;
     Ok(rejoin_hyphenated_words(&text))
 }

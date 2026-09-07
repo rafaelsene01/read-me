@@ -352,7 +352,7 @@ flowchart TB
 
 ---
 
-## M10 — Pivô para leitor — ⚙️ EM EXECUÇÃO (planejado 2026-09-04 pela AD-052; **M10.1 implementado em 2026-09-05, não verificado clicando**)
+## M10 — Pivô para leitor — ⚙️ EM EXECUÇÃO (planejado 2026-09-04 pela AD-052; **M10.1 e M10.2 implementados em 2026-09-05/06, nenhum dos dois verificado clicando**)
 
 O produto deixa de ser um chat com RAG e passa a ser um **leitor**: importar livros, remontá-los para leitura na tela e lê-los em voz alta com marcação estilo karaokê. Planejado em três fatias; **só a primeira tem tasks**.
 
@@ -378,21 +378,27 @@ O produto deixa de ser um chat com RAG e passa a ser um **leitor**: importar liv
 - **Não há teste de frontend**: o store e os componentes nunca rodaram. `vitest.config.ts` existe e aponta para `src/test/setup.ts` e dois dobles que **não existem na árvore**
 - **A migração 9 não foi ensaiada contra cópia de banco real** (`db::real_database` continua `#[ignore]`)
 
-### M10.2 — Leitor — ⛔ NÃO PLANEJADO
-Extrair o texto, remontar o livro em formato navegável **preservando as gravuras**, renderizar na tela. É esta fatia que define a **âncora de posição de leitura**, e é por isso que a `reading-history` está bloqueada.
+### M10.2 — Leitor — ⚙️ 16 de 17 tasks (2026-09-05/06); **falta a T13, a UAT — e NADA foi verificado clicando**
+Extrair o texto, remontar o livro em páginas navegáveis, renderizar na tela, e traduzir página a página pelo sidecar local. `.specs/features/book-reader/` tem spec, design e tasks; a **âncora de posição ficou definida** como o índice de página (base 0) em `books.last_page`, o que **desbloqueou a `reading-history`**.
+
+**Escopo entregue** (T1-T11, T14-T17): migração **10**, extração de PDF (reuso do `extract_pdf`) e de EPUB na ordem do spine, paginação determinística em fronteira de parágrafo, layout em disco (`<livro>/original/`, `<livro>/<idioma>/NNNN.txt`) com migração do layout antigo, tradução parágrafo a parágrafo retomável, 11 comandos Tauri, e o frontend inteiro — `readerStore`, `ReaderPanel`, `ProcessDialog`, `BookEditPanel`, `ReadingList` e a rota `reader`.
+
+**Fora do que foi entregue, e dito porque o `ROADMAP.md` pedia:** as **gravuras não são preservadas** — a spec segue o pedido literal do usuário ("extrair o texto") e registra a divergência com esta linha como suposição a vetar, não como decisão silenciosa.
+
+> ⚠️ **`npm run tauri dev` não rodou uma única vez em toda a M10.2.** Os gates automatizados passam (`cargo test --lib` **265 / 0 / 16**, `npm run build` exit 0, i18n **206/206**), mas nenhum `invoke` foi disparado, nenhum livro real foi processado, nenhuma tradução real foi gerada e nenhum pixel foi visto. **Nenhum READ-xx está `Verified`.** A T13 é a UAT que fecha isso, e ela precisa de livros de verdade. Some-se **meio gate aberto na T17**: o ensaio da migração de layout contra cópia de biblioteca real não rodou (`READER_LEGACY_LIBRARY` indefinida).
 
 ### M10.3 — Audiobook com karaokê — ⛔ NÃO PLANEJADO, VIABILIDADE NÃO MEDIDA
 Ler em voz alta marcando a palavra corrente. **Gate:** existe TTS local com limite por palavra (*word boundary*)? Não foi medido. Se não existir, esta fatia cai ou muda de forma — medir **antes** de construir o leitor em volta dela.
 
-### Histórico de leitura — 📋 REQUISITOS ESCRITOS, SEM TASKS
-`.specs/features/reading-history/` — a área de chat vira o histórico, com "onde parou". Sem tasks de propósito: a posição não tem quem a escreva até o M10.2 existir, e o que "posição" significa depende do design dele.
+### Histórico de leitura — ⚙️ IMPLEMENTADO PELAS TASKS DA `book-reader`, NÃO VERIFICADO
+`.specs/features/reading-history/` — a área de chat virou o histórico, com "onde parou". **O bloqueador foi levantado em 2026-09-05** e a feature continua sem `tasks.md` próprio de propósito: os oito HIST-xx são implementados pelas tasks da `book-reader` (T2, T7, T8, T11), e dois `tasks.md` para o mesmo código seriam duas fontes de verdade. HIST-02/04/05/06/07 têm prova de backend; HIST-01 e HIST-03 **só compilam** — a lateral nunca foi vista.
 
 ### O que o M10 revoga
 
 - **M5 (RAG global):** a UI de importação para RAG **saiu em 2026-09-05**, junto com a aba. O backend fica. Anotado em `.specs/features/documents-rag/spec.md`, requisito a requisito, sem apagar nenhum: DOC-01, DOC-02, DOC-03, DOC-05, DOC-08 e DOC-09 perderam a porta; DOC-10/11/12 continuam valendo porque o chat não foi revogado nesta rodada.
-- **M4/M6 (chat e memória):** a lista de chats dá lugar ao histórico de leituras. **Nada disso foi executado ainda** — o chat continua inteiro e é o único caminho verificado do app.
+- **M4/M6 (chat e memória):** a lista de chats deu lugar ao histórico de leituras — **executado em 2026-09-06** (AD-056). O `ChatPanel` perdeu a rota, `"chat"` saiu da união `ActiveView` e o padrão do app virou `"reader"`. Anotado requisito a requisito em `chat-messaging/spec.md` e `conversation-memory/spec.md`, **sem apagar nenhum**. O backend de chat e de memória continua inteiro. Ironia registrada: o chat era o único caminho **verificado clicando** do app, e o que o substituiu **nunca foi aberto**.
 
-A revogação do **código** continua **marcada, não executada** (AD-052). Gatilho escrito da remoção: a primeira sessão após o leitor (M10.2) renderizar um livro ponta a ponta. Órfãos de rota, presentes e compilando: `DocumentsPanel.tsx`, `DocumentRow.tsx`, `DocumentStatusBadge.tsx`, `documentsStore.ts`, `documentsApi.ts` e as chaves `sidebar.documents` / `documents.*`. Único arquivo apagado: `DocumentsSection.tsx`, e por obrigação do `tsc`, não por escolha.
+A revogação do **código** continua **marcada, não executada** (AD-052). Gatilho escrito da remoção: a primeira sessão após o leitor (M10.2) renderizar um livro ponta a ponta. **O gatilho ainda NÃO disparou em 2026-09-06:** ele exige o leitor renderizar um livro ponta a ponta, e a T13 não rodou. Órfãos de rota, presentes e compilando: `DocumentRow.tsx`, `DocumentStatusBadge.tsx`, `documentsStore.ts`, `documentsApi.ts`, `ChatPanel.tsx`, `MessageInput.tsx`, `ContextGauge.tsx`, `chatStore.ts` e as chaves `sidebar.documents` / `documents.*` / `chat.*`. Arquivos apagados até aqui, **os três por obrigação do `tsc` e nenhum por escolha**: `DocumentsSection.tsx` (2026-09-05), `ChatList.tsx` e `DocumentsPanel.tsx` (2026-09-06).
 
 ---
 

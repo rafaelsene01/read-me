@@ -1,13 +1,18 @@
-// SPEC: book-library (LIB-01, LIB-03, LIB-04, LIB-09, LIB-10, LIB-11, LIB-12)
+// SPEC: book-library (LIB-01, LIB-03, LIB-04, LIB-09, LIB-10, LIB-11, LIB-12),
+//       book-reader (READ-02, READ-04, READ-05, READ-06)
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { open } from "@tauri-apps/plugin-dialog";
 import { openPath } from "@tauri-apps/plugin-opener";
 import { ArrowLeft, FolderOpen, Upload } from "lucide-react";
 import { useUiStore } from "../../store/uiStore";
 import { useLibraryStore } from "../../store/libraryStore";
+import { useReaderStore } from "../../store/readerStore";
 import { BookRow } from "./BookRow";
+import { BookEditPanel } from "./BookEditPanel";
+import { ProcessDialog } from "./ProcessDialog";
+import type { BookRecord } from "../../types";
 
 const BOOK_EXTENSIONS = ["pdf", "epub", "mobi", "azw", "azw3"];
 
@@ -20,11 +25,20 @@ export function LibraryPanel() {
     libraryPath,
     isImporting,
     error,
+    progress,
     loadBooks,
     loadLibraryPath,
     importBooks,
     deleteBook,
+    processBook,
+    cancelProcessing,
   } = useLibraryStore();
+  const openBook = useReaderStore((s) => s.openBook);
+  const [dialogBook, setDialogBook] = useState<BookRecord | null>(null);
+  const [editingBookId, setEditingBookId] = useState<string | null>(null);
+  /** Ids of the books with a run in flight. There is no `translating` status to
+   *  read this from: the run's end is the `processBook` promise resolving. */
+  const [busyIds, setBusyIds] = useState<string[]>([]);
 
   useEffect(() => {
     loadBooks();
@@ -41,11 +55,20 @@ export function LibraryPanel() {
     await importBooks(Array.isArray(selected) ? selected : [selected]);
   }
 
+  async function handleProcess(book: BookRecord, language: string | null) {
+    setDialogBook(null);
+    setBusyIds((ids) => [...ids, book.id]);
+    // A translation that fails leaves the book `ready` and its pages on disk
+    // (T6): the error lands in the store's banner and the row stays in the list.
+    await processBook(book.id, language);
+    setBusyIds((ids) => ids.filter((id) => id !== book.id));
+  }
+
   return (
     <div className="flex flex-1 flex-col overflow-y-auto bg-[var(--bg-app)] text-[var(--text-primary)]">
       <div className="flex items-center gap-3 border-b border-[var(--border-color)] px-6 py-4">
         <button
-          onClick={() => setActiveView("chat")}
+          onClick={() => setActiveView("reader")}
           className="rounded-md p-1.5 text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
           title={t("settings.back")}
         >
@@ -100,11 +123,38 @@ export function LibraryPanel() {
             <p className="text-sm text-[var(--text-secondary)]">{t("library.empty")}</p>
           ) : (
             books.map((book) => (
-              <BookRow key={book.id} book={book} onRemove={() => deleteBook(book.id)} />
+              <div key={book.id}>
+                <BookRow
+                  book={book}
+                  progress={progress[book.id]}
+                  isBusy={busyIds.includes(book.id)}
+                  isEditing={editingBookId === book.id}
+                  onRemove={() => deleteBook(book.id)}
+                  onProcess={() => setDialogBook(book)}
+                  onCancel={() => void cancelProcessing(book.id)}
+                  // Loads the book into the reader store; the `reader` view that
+                  // renders it is routed by T11, which owns uiStore and App.tsx.
+                  onRead={() => void openBook(book.id, book.reading_language)}
+                  onEdit={() => setEditingBookId(editingBookId === book.id ? null : book.id)}
+                />
+                {/* READ-24: the panel opens under its own row, so the book it
+                    edits is never in doubt. */}
+                {editingBookId === book.id && (
+                  <BookEditPanel book={book} onClose={() => setEditingBookId(null)} />
+                )}
+              </div>
             ))
           )}
         </div>
       </div>
+
+      {dialogBook && (
+        <ProcessDialog
+          book={dialogBook}
+          onClose={() => setDialogBook(null)}
+          onConfirm={(language) => void handleProcess(dialogBook, language)}
+        />
+      )}
     </div>
   );
 }

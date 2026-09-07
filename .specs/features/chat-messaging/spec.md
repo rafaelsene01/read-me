@@ -1,5 +1,9 @@
 # Chat: Envio, Streaming & Anexos — Specification
 
+> ⛔ **A UI desta feature perdeu a porta em 2026-09-06, pela `book-reader` (T11) — decisão **AD-056**, gatilho da **AD-052 item 4**.** A união `ActiveView` (`src/store/uiStore.ts`) passou a ser `"reader" | "settings" | "runtime" | "library"`, o padrão do app virou `"reader"` e `App.tsx` monta o `ReaderPanel` no lugar do `ChatPanel`. `src/components/Sidebar/ChatList.tsx` foi **apagado** — não por escolha: sem `"chat"` na união o `tsc` falhava nele, o mesmo que aconteceu com `DocumentsSection.tsx` em 2026-09-05.
+>
+> **Nenhum requisito abaixo foi apagado, e nenhum comando saiu do `invoke_handler`.** `ChatPanel.tsx`, `MessageInput.tsx`, `ContextGauge.tsx`, `chatStore` e todo o backend de chat continuam no repositório, compilando, **sem caminho pela UI**. A remoção física continua com o gatilho da AD-052 item 4, que **ainda não disparou**: ele exige o leitor renderizar um livro ponta a ponta, e isso é a T13 (UAT), que não rodou.
+
 ## Problem Statement
 
 O chat hoje só mostra "sem mensagens ainda" — não dá pra conversar de verdade. Esta feature entrega o campo de mensagem, o envio com resposta em streaming usando o modelo marcado (M3), e a possibilidade de anexar arquivos numa conversa específica: esses arquivos são serializados e usados como RAG **só naquele chat**, além (opcionalmente) da base global de documentos (M5).
@@ -112,22 +116,22 @@ Consome diretamente:
 
 | Requirement ID | Story | Phase | Status |
 | --- | --- | --- | --- |
-| CHAT-01 | P1: Enviar mensagem + streaming | Implemented | Implemented |
-| CHAT-02 | P1: Bloquear envio sem modelo ativo | Implemented | Implemented |
-| CHAT-03 | P1: Persistir mensagens da conversa | Implemented | Implemented |
-| CHAT-04 | P1: Cancelar geração em andamento | Implemented | Implemented |
-| CHAT-05 | P1: Tratar erro de chamada ao modelo | Implemented | Implemented |
-| CHAT-06 | P1: Anexar arquivo → serializar em tmp/ | Implemented | Implemented — o arquivo em disco passou a ser prefixado pelo id do anexo em 2026-07-26 (AD-040); antes, dois arquivos de mesmo nome no mesmo chat se sobrescreviam |
-| CHAT-07 | P1: Processar anexo (pipeline reusado de DOC-04) | Implemented | Implemented |
-| CHAT-08 | P1: Usar trechos do anexo no contexto da resposta | Implemented | Implemented |
-| CHAT-09 | P1: Injetar anexo pequeno inteiro (sem RAG) | Implemented | Implemented |
-| CHAT-10 | P1: Falha de anexo não bloqueia envio da mensagem | Implemented | Implemented |
-| CHAT-11 | P1: Isolamento de namespace por chat_id | Implemented | Implemented — **estava furado até 2026-07-26** (AD-040): a linha temporária que um anexo grande cria em `documents` era reprocessada no boot com o namespace **global** se o app morresse durante a indexação. Fechado pela migração 6 (coluna `namespace`). ✅ **Verificado no app em 2026-07-27** pelos dois caminhos de anexo: com o arquivo grande (34.983 B, que vai para o namespace `chat:<id>`) o chat dono respondeu `3,72 unidades [fonte: relatorio-grande.txt]` e um segundo chat, com a mesma pergunta, respondeu que não tem o dado |
-| CHAT-12 | P1: Apagar tmp/ e embeddings ao excluir chat | Implemented | ✅ **Verificado no app (2026-07-27)** — pelo lado do disco, que é onde a UI não alcança: `chats/afd9e7fd…/tmp/632b32c2-…-relatorio-grande.txt` existia antes do clique em Excluir e a pasta do chat não existe depois. Que os embeddings saem junto segue provado por teste contra LanceDB real |
-| CHAT-13 | P2: Combinar RAG global + RAG do chat | Implemented | Implemented. ⚠️ **A combinação mudou em 2026-07-27 (AD-050)**: o pool passou a incluir também a memória da conversa, com teto compartilhado, e a posição relativa à pergunta segue o ranqueamento em vez da camada |
-| CHAT-14 | P2: Toggle de uso da base global por chat | Implemented | Implemented |
-| CHAT-15 | P2: Priorização de orçamento de contexto | Implemented | Implemented |
-| CHAT-16 | P3: Indicador de uso do contexto | Implemented | ✅ **Verificado no app (2026-07-27)** — anel ao lado de Enviar, tooltip `Contexto: 8.805 de 21.760 tokens`. O teto espelha o `budget_context` do backend (window configurada, senão o `current_context` que o runtime informa), depois de a primeira versão mostrar `8.805 de 4.096` por assumir o default |
+| CHAT-01 | P1: Enviar mensagem + streaming | Implemented | Implemented ⛔ **Sem porta na UI desde 2026-09-06 (AD-056)** — o `ChatPanel` não tem rota; o backend e a evidência anterior seguem válidos. |
+| CHAT-02 | P1: Bloquear envio sem modelo ativo | Implemented | Implemented ⛔ **Sem porta na UI desde 2026-09-06 (AD-056)** — o `ChatPanel` não tem rota; o backend e a evidência anterior seguem válidos. |
+| CHAT-03 | P1: Persistir mensagens da conversa | Implemented | Implemented ⛔ **Sem porta na UI desde 2026-09-06 (AD-056)** — o `ChatPanel` não tem rota; o backend e a evidência anterior seguem válidos. |
+| CHAT-04 | P1: Cancelar geração em andamento | Implemented | Implemented ⛔ **Sem porta na UI desde 2026-09-06 (AD-056)** — o `ChatPanel` não tem rota; o backend e a evidência anterior seguem válidos. |
+| CHAT-05 | P1: Tratar erro de chamada ao modelo | Implemented | Implemented ⛔ **Sem porta na UI desde 2026-09-06 (AD-056)** — o `ChatPanel` não tem rota; o backend e a evidência anterior seguem válidos. |
+| CHAT-06 | P1: Anexar arquivo → serializar em tmp/ | Implemented | Implemented — o arquivo em disco passou a ser prefixado pelo id do anexo em 2026-07-26 (AD-040); antes, dois arquivos de mesmo nome no mesmo chat se sobrescreviam ⛔ **Sem porta na UI desde 2026-09-06 (AD-056)** — o `ChatPanel` não tem rota; o backend e a evidência anterior seguem válidos. |
+| CHAT-07 | P1: Processar anexo (pipeline reusado de DOC-04) | Implemented | Implemented ⛔ **Sem porta na UI desde 2026-09-06 (AD-056)** — o `ChatPanel` não tem rota; o backend e a evidência anterior seguem válidos. |
+| CHAT-08 | P1: Usar trechos do anexo no contexto da resposta | Implemented | Implemented ⛔ **Sem porta na UI desde 2026-09-06 (AD-056)** — o `ChatPanel` não tem rota; o backend e a evidência anterior seguem válidos. |
+| CHAT-09 | P1: Injetar anexo pequeno inteiro (sem RAG) | Implemented | Implemented ⛔ **Sem porta na UI desde 2026-09-06 (AD-056)** — o `ChatPanel` não tem rota; o backend e a evidência anterior seguem válidos. |
+| CHAT-10 | P1: Falha de anexo não bloqueia envio da mensagem | Implemented | Implemented ⛔ **Sem porta na UI desde 2026-09-06 (AD-056)** — o `ChatPanel` não tem rota; o backend e a evidência anterior seguem válidos. |
+| CHAT-11 | P1: Isolamento de namespace por chat_id | Implemented | Implemented — **estava furado até 2026-07-26** (AD-040): a linha temporária que um anexo grande cria em `documents` era reprocessada no boot com o namespace **global** se o app morresse durante a indexação. Fechado pela migração 6 (coluna `namespace`). ✅ **Verificado no app em 2026-07-27** pelos dois caminhos de anexo: com o arquivo grande (34.983 B, que vai para o namespace `chat:<id>`) o chat dono respondeu `3,72 unidades [fonte: relatorio-grande.txt]` e um segundo chat, com a mesma pergunta, respondeu que não tem o dado ⛔ **Sem porta na UI desde 2026-09-06 (AD-056)** — o `ChatPanel` não tem rota; o backend e a evidência anterior seguem válidos. |
+| CHAT-12 | P1: Apagar tmp/ e embeddings ao excluir chat | Implemented | ✅ **Verificado no app (2026-07-27)** — pelo lado do disco, que é onde a UI não alcança: `chats/afd9e7fd…/tmp/632b32c2-…-relatorio-grande.txt` existia antes do clique em Excluir e a pasta do chat não existe depois. Que os embeddings saem junto segue provado por teste contra LanceDB real ⛔ **Sem porta na UI desde 2026-09-06 (AD-056)** — o `ChatPanel` não tem rota; o backend e a evidência anterior seguem válidos. |
+| CHAT-13 | P2: Combinar RAG global + RAG do chat | Implemented | Implemented. ⚠️ **A combinação mudou em 2026-07-27 (AD-050)**: o pool passou a incluir também a memória da conversa, com teto compartilhado, e a posição relativa à pergunta segue o ranqueamento em vez da camada ⛔ **Sem porta na UI desde 2026-09-06 (AD-056)** — o `ChatPanel` não tem rota; o backend e a evidência anterior seguem válidos. |
+| CHAT-14 | P2: Toggle de uso da base global por chat | Implemented | Implemented ⛔ **Sem porta na UI desde 2026-09-06 (AD-056)** — o `ChatPanel` não tem rota; o backend e a evidência anterior seguem válidos. |
+| CHAT-15 | P2: Priorização de orçamento de contexto | Implemented | Implemented ⛔ **Sem porta na UI desde 2026-09-06 (AD-056)** — o `ChatPanel` não tem rota; o backend e a evidência anterior seguem válidos. |
+| CHAT-16 | P3: Indicador de uso do contexto | Implemented | ✅ **Verificado no app (2026-07-27)** — anel ao lado de Enviar, tooltip `Contexto: 8.805 de 21.760 tokens`. O teto espelha o `budget_context` do backend (window configurada, senão o `current_context` que o runtime informa), depois de a primeira versão mostrar `8.805 de 4.096` por assumir o default ⛔ **Sem porta na UI desde 2026-09-06 (AD-056)** — o `ChatPanel` não tem rota; o backend e a evidência anterior seguem válidos. |
 
 **ID format:** `CHAT-[NUMBER]`
 **Status values:** Pending → In Design → In Tasks → Implementing → Verified

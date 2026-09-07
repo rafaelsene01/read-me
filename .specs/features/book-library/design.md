@@ -63,7 +63,7 @@ Sem coluna de posição de leitura. Ela entra na migração que vier junto com o
 
 | Comando | Assinatura | Requisitos |
 | --- | --- | --- |
-| `import_books` | `(paths: Vec<String>) -> ImportBooksResult` | LIB-02..LIB-08 |
+| `import_books` | `(paths: Vec<String>) -> ImportBooksResult` | LIB-02 (⛔ revogado como estava escrito — ver READ-32), LIB-03..LIB-08 |
 | `list_books` | `() -> Vec<BookRecord>` | LIB-09 |
 | `delete_book` | `(id: String) -> ()` | LIB-10 |
 | `library_path` | `() -> String` | LIB-11, LIB-12 |
@@ -111,7 +111,8 @@ usuário clica importar
         extensão fora da lista?        → rejected                  (LIB-03)
         metadata falhou?               → rejected                  (LIB-05.3)
         tem DRM?                       → rejected, sem copiar      (LIB-05, LIB-06)
-        copia para library/, sufixo em colisão                     (LIB-02)
+        cria library/<pasta>/ e copia para dentro dela             (READ-32,
+        sufixo em colisão — na PASTA, não no arquivo               revoga LIB-02)
         INSERT INTO books                                          (LIB-07)
       ← { imported, rejected }
   → store recarrega a lista                                        (LIB-09)

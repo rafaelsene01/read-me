@@ -1,5 +1,5 @@
 // SPEC: book-library (LIB-02, LIB-03, LIB-04, LIB-05, LIB-06, LIB-07, LIB-08,
-//       LIB-09, LIB-10, LIB-11, LIB-12)
+//       LIB-09, LIB-10, LIB-11, LIB-12), book-reader (READ-13, READ-18, READ-32)
 
 use crate::db::{require_conn, DbState};
 use crate::document_commands::{unique_destination, RejectedImport};
@@ -10,7 +10,7 @@ use serde::Serialize;
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, Manager, State};
 use uuid::Uuid;
 
 /// The five formats the library accepts. `.kfx` is deliberately absent: no open
@@ -100,6 +100,19 @@ pub struct BookRecord {
     pub format: String,
     pub size_bytes: u64,
     pub imported_at: String,
+    /// The seven reader columns of migration 10, in the order the migration
+    /// creates them. `status` is a `String` and not `BookStatus` for the same
+    /// reason `DocumentRecord.status` is: it comes straight out of the row.
+    /// **This struct crosses the Rust/TS boundary and nothing checks the other
+    /// side** (AD-054) — `src/types.ts` is hand-written and T8 is what updates
+    /// it, field by field.
+    pub folder: Option<String>,
+    pub status: String,
+    pub error_message: Option<String>,
+    pub page_count: u32,
+    pub reading_language: Option<String>,
+    pub last_page: Option<u32>,
+    pub last_opened_at: Option<String>,
 }
 
 /// Same contract as `ImportResult`: one bad file in a selection must not throw
@@ -118,13 +131,37 @@ pub struct ImportBooksResult {
 ///
 /// The path stays relative to `base_path`, which in portable mode is already
 /// `./data` next to the executable (LIB-11.4).
-fn library_dir(app: &AppHandle) -> Result<PathBuf, String> {
+pub(crate) fn library_dir(app: &AppHandle) -> Result<PathBuf, String> {
     // No base folder configured yet is a refusal, not an empty import (LIB-04).
     let cfg = crate::config::load_config(app)?
         .ok_or_else(|| "Nenhuma pasta de armazenamento configurada ainda".to_string())?;
     let dir = cfg.base_path_buf().join("library");
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     Ok(dir)
+}
+
+/// The folder a book gets inside `library/`, and its full path (READ-32.1).
+///
+/// The name is the file stem run through `unique_destination`, the very same
+/// disambiguation the M10.1 already applies to file names: `a.pdf` and
+/// `a.epub` both want the folder `a`, so the second becomes `a (2)`
+/// (READ-32.2). Deriving the name at every call site instead of storing it is
+/// what `books.folder` exists to avoid.
+///
+/// `book_dir` has the last word on the name: it is the guard that keeps
+/// `remove_book_dir` from ever being handed something that resolves to
+/// `library/` itself.
+fn folder_for(dir: &Path, filename: &str) -> Result<(String, PathBuf), String> {
+    let stem = Path::new(filename)
+        .file_stem()
+        .map(|s| s.to_string_lossy().to_string())
+        .unwrap_or_default();
+    let name = unique_destination(dir, &stem)
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_default();
+    let path = crate::reader::storage::book_dir(dir, &name).map_err(|e| e.to_string())?;
+    Ok((name, path))
 }
 
 fn row_to_book(row: &rusqlite::Row) -> rusqlite::Result<BookRecord> {
@@ -134,6 +171,13 @@ fn row_to_book(row: &rusqlite::Row) -> rusqlite::Result<BookRecord> {
         format: row.get(2)?,
         size_bytes: row.get::<_, i64>(3)? as u64,
         imported_at: row.get(4)?,
+        folder: row.get(5)?,
+        status: row.get(6)?,
+        error_message: row.get(7)?,
+        page_count: row.get::<_, i64>(8)? as u32,
+        reading_language: row.get(9)?,
+        last_page: row.get::<_, Option<i64>>(10)?.map(|page| page as u32),
+        last_opened_at: row.get(11)?,
     })
 }
 
@@ -185,44 +229,69 @@ fn import_all(conn: &Connection, dir: &Path, paths: Vec<String>) -> ImportBooksR
             continue;
         };
 
-        let destination = unique_destination(dir, &filename);
+        // The book gets a folder of its own, and the file goes inside it
+        // (READ-32.1). This is the revocation of LIB-02 as written: the
+        // destination is `library/<folder>/<filename>`, never `library/<filename>`.
+        let (folder, book_folder) = match folder_for(dir, &filename) {
+            Ok(pair) => pair,
+            Err(e) => {
+                reject(e);
+                continue;
+            }
+        };
+        if let Err(e) = std::fs::create_dir_all(&book_folder) {
+            reject(e.to_string());
+            continue;
+        }
+        let destination = book_folder.join(&filename);
         if let Err(e) = std::fs::copy(&source, &destination) {
+            // The folder was created one line above and holds nothing else, so
+            // a failed copy must not leave an empty book folder in the library.
+            let _ = std::fs::remove_dir_all(&book_folder);
             reject(e.to_string());
             continue;
         }
 
         let record = BookRecord {
             id: Uuid::new_v4().to_string(),
-            // The name on disk, not the original one: a collision renamed it,
-            // and the row must point at the file that actually exists. There
-            // is no `file_path` column — the path is always
-            // `<base_path>/library/<filename>`, and an absolute path would
-            // break portable mode when the drive letter changes.
-            filename: destination
-                .file_name()
-                .map(|n| n.to_string_lossy().to_string())
-                .unwrap_or(filename),
+            // The original name, and it no longer needs a suffix: the folder is
+            // what got disambiguated, so two books named `livro.pdf` keep their
+            // name and differ by folder. There is no `file_path` column — the
+            // path is always `<base_path>/library/<folder>/<filename>`, and an
+            // absolute path would break portable mode when the drive letter
+            // changes.
+            filename,
             format: extension_of(&source),
             size_bytes: metadata.len(),
             imported_at: Utc::now().to_rfc3339(),
+            // The reader columns as the INSERT below leaves them: an imported
+            // book has no pages until `process_book` runs.
+            folder: Some(folder.clone()),
+            status: "imported".to_string(),
+            error_message: None,
+            page_count: 0,
+            reading_language: None,
+            last_page: None,
+            last_opened_at: None,
         };
 
         // No text extraction, no chunking, no embedding and no `documents`
         // row: a book is a file plus a row, nothing else (LIB-07, LIB-08).
         if let Err(e) = conn.execute(
-            "INSERT INTO books (id, filename, format, size_bytes, imported_at)
-             VALUES (?1, ?2, ?3, ?4, ?5)",
+            "INSERT INTO books (id, filename, format, size_bytes, imported_at, folder)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
             params![
                 record.id,
                 record.filename,
                 record.format,
                 record.size_bytes as i64,
-                record.imported_at
+                record.imported_at,
+                folder
             ],
         ) {
-            // Without this the file would sit in the library with no row,
+            // Without this the folder would sit in the library with no row,
             // invisible in the UI and impossible to remove from it.
-            let _ = std::fs::remove_file(&destination);
+            let _ = std::fs::remove_dir_all(&book_folder);
             reject(e.to_string());
             continue;
         }
@@ -235,7 +304,8 @@ fn import_all(conn: &Connection, dir: &Path, paths: Vec<String>) -> ImportBooksR
 fn select_books(conn: &Connection) -> Result<Vec<BookRecord>, String> {
     let mut stmt = conn
         .prepare(
-            "SELECT id, filename, format, size_bytes, imported_at
+            "SELECT id, filename, format, size_bytes, imported_at, folder, status,
+                    error_message, page_count, reading_language, last_page, last_opened_at
              FROM books ORDER BY imported_at DESC",
         )
         .map_err(|e| e.to_string())?;
@@ -250,12 +320,12 @@ fn select_books(conn: &Connection) -> Result<Vec<BookRecord>, String> {
 /// The row goes first and the file after, and a missing file is not an error:
 /// a book the user already deleted by hand must still disappear from the list
 /// instead of becoming impossible to remove (LIB-10).
-fn remove_book(conn: &Connection, dir: &Path, id: &str) -> Result<(), String> {
-    let filename: Option<String> = conn
+pub(crate) fn remove_book(conn: &Connection, dir: &Path, id: &str) -> Result<(), String> {
+    let row: Option<(String, Option<String>)> = conn
         .query_row(
-            "SELECT filename FROM books WHERE id = ?1",
+            "SELECT filename, folder FROM books WHERE id = ?1",
             params![id],
-            |row| row.get(0),
+            |row| Ok((row.get(0)?, row.get(1)?)),
         )
         .ok();
     let deleted = conn
@@ -264,10 +334,109 @@ fn remove_book(conn: &Connection, dir: &Path, id: &str) -> Result<(), String> {
     if deleted == 0 {
         return Err("Livro não encontrado".to_string());
     }
-    if let Some(filename) = filename {
-        let _ = std::fs::remove_file(dir.join(filename));
+    match row {
+        // Since READ-32 the file lives inside the book's folder, so deleting
+        // only `library/<filename>` would leave the whole folder orphaned on
+        // disk with no row left to find it by.
+        Some((_, Some(folder))) => {
+            let _ = crate::reader::storage::remove_book_dir(dir, &folder);
+        }
+        // `folder` NULL is the pre-READ-32 layout: the file sits loose in
+        // `library/`. Reachable after boot only for a row the layout migration
+        // could not move.
+        Some((filename, None)) => {
+            let _ = std::fs::remove_file(dir.join(filename));
+        }
+        None => {}
     }
     Ok(())
+}
+
+/// Moves a library still on the pre-READ-32 layout into one folder per book,
+/// once, at boot (READ-32.3).
+///
+/// **It lives here and not in `reader::storage` even though the design lists it
+/// there:** it needs a `Connection`, and `storage` is deliberately made of pure
+/// functions over `&Path` so it can be exercised without a database or an
+/// `AppHandle`. Path building still happens in exactly one place — `book_dir`
+/// via `folder_for` — which is what centralising the layout was for.
+///
+/// Idempotent by construction: the candidates are the rows with `folder` NULL,
+/// and a row stops being a candidate the moment its folder is recorded
+/// (READ-32.4). Nothing is ever lost — a book that cannot be moved keeps both
+/// its row and its file, and the reason is printed (READ-32.5).
+///
+/// Returns how many books were moved.
+fn migrate_layout(conn: &Connection, dir: &Path) -> usize {
+    let legacy: Vec<(String, String)> = {
+        let Ok(mut stmt) = conn.prepare("SELECT id, filename FROM books WHERE folder IS NULL")
+        else {
+            return 0;
+        };
+        let Ok(rows) = stmt.query_map([], |row| Ok((row.get(0)?, row.get(1)?))) else {
+            return 0;
+        };
+        rows.filter_map(Result::ok).collect()
+    };
+
+    let mut moved = 0;
+    for (id, filename) in legacy {
+        let source = dir.join(&filename);
+        if !source.is_file() {
+            // A library the user half-deleted by hand must not stop the app
+            // from opening: the row keeps its NULL and the book shows up as
+            // it did before.
+            eprintln!("library: {filename} is not in the library folder, layout migration skipped it");
+            continue;
+        }
+        let (folder, book_folder) = match folder_for(dir, &filename) {
+            Ok(pair) => pair,
+            Err(e) => {
+                eprintln!("library: no folder name for {filename}: {e}");
+                continue;
+            }
+        };
+        if let Err(e) = std::fs::create_dir_all(&book_folder) {
+            eprintln!("library: could not create the folder for {filename}: {e}");
+            continue;
+        }
+        if let Err(e) = std::fs::rename(&source, book_folder.join(&filename)) {
+            // `remove_dir` and not `remove_dir_all`: the folder was created
+            // three lines above and must still be empty, and refusing to
+            // delete a non-empty one is the cheapest guard there is.
+            let _ = std::fs::remove_dir(&book_folder);
+            eprintln!("library: could not move {filename} into its folder: {e}");
+            continue;
+        }
+        if let Err(e) = conn.execute(
+            "UPDATE books SET folder = ?1 WHERE id = ?2",
+            params![folder, id],
+        ) {
+            // The row is the only thing that knows where the file went. With
+            // the update lost, the move has to be undone or the book would be
+            // unreachable from the app.
+            let _ = std::fs::rename(book_folder.join(&filename), &source);
+            let _ = std::fs::remove_dir(&book_folder);
+            eprintln!("library: could not record the folder of {filename}: {e}");
+            continue;
+        }
+        moved += 1;
+    }
+    moved
+}
+
+/// The boot half of `migrate_layout`, called from `setup` next to
+/// `requeue_unfinished_documents`. Silent when there is no database yet: the
+/// user has not finished onboarding, so there is no library to migrate.
+pub fn migrate_legacy_layout(app: &AppHandle) {
+    let Ok(dir) = library_dir(app) else { return };
+    let db = app.state::<DbState>();
+    let Ok(guard) = db.0.lock() else { return };
+    let Some(conn) = guard.as_ref() else { return };
+    let moved = migrate_layout(conn, &dir);
+    if moved > 0 {
+        println!("library: moved {moved} book(s) into a folder of their own");
+    }
 }
 
 #[tauri::command]
@@ -441,6 +610,17 @@ mod tests {
         .unwrap();
     }
 
+    /// The folder recorded for a book, read straight from the row. `BookRecord`
+    /// does **not** carry it: adding a field to a struct that crosses the
+    /// Rust/TS boundary is T8's job, and AD-054 says nothing would warn about a
+    /// divergence.
+    fn folder_of(conn: &rusqlite::Connection, id: &str) -> Option<String> {
+        conn.query_row("SELECT folder FROM books WHERE id = ?1", params![id], |row| {
+            row.get(0)
+        })
+        .unwrap()
+    }
+
     /// A fresh, empty folder per test: reusing one would let the collision
     /// test see leftovers from a previous run and pass for the wrong reason.
     fn empty_dir(tag: &str) -> PathBuf {
@@ -499,8 +679,10 @@ mod tests {
 
     #[test]
     fn a_second_book_with_the_same_name_gets_a_suffix_instead_of_overwriting() {
-        // LIB-02. Two different files that happen to share a name: the first
-        // one's bytes must survive.
+        // LIB-02, rewritten by READ-32: what takes the `(2)` suffix is now the
+        // FOLDER, not the file, and the file keeps the name the user gave it.
+        // The criterion this test defends is unchanged and is the reason it was
+        // updated instead of deleted — the first book's bytes must survive.
         let conn = migrated();
         let dir = empty_dir("collision");
         let source_dir = empty_dir("collision-src");
@@ -521,19 +703,26 @@ mod tests {
             vec![first.to_string_lossy().to_string()],
         );
         assert_eq!(result.imported.len(), 1);
-        assert_eq!(result.imported[0].filename, "livro (2).pdf");
+        assert_eq!(result.imported[0].filename, "livro.pdf");
+        assert_eq!(folder_of(&conn, &result.imported[0].id).as_deref(), Some("livro (2)"));
 
-        assert_eq!(std::fs::read(dir.join("livro.pdf")).unwrap(), b"primeiro");
-        assert_eq!(std::fs::read(dir.join("livro (2).pdf")).unwrap(), b"segundo");
+        assert_eq!(
+            std::fs::read(dir.join("livro").join("livro.pdf")).unwrap(),
+            b"primeiro"
+        );
+        assert_eq!(
+            std::fs::read(dir.join("livro (2)").join("livro.pdf")).unwrap(),
+            b"segundo"
+        );
 
-        // The row must name the file that actually exists, otherwise the
-        // library would list a book it can never open or delete.
+        // Two rows with the same file name is now normal and no longer
+        // ambiguous: the folder is what tells them apart.
         let names: Vec<String> = select_books(&conn)
             .unwrap()
             .into_iter()
             .map(|b| b.filename)
             .collect();
-        assert!(names.contains(&"livro (2).pdf".to_string()), "{names:?}");
+        assert_eq!(names, vec!["livro.pdf", "livro.pdf"], "{names:?}");
     }
 
     #[test]
@@ -599,10 +788,11 @@ mod tests {
         assert!(result.rejected[1].reason.contains("DRM"));
 
         // The DRM'd file is refused before the copy: nothing of it may land
-        // in the library folder (LIB-05).
-        assert!(!dir.join("protegido.mobi").exists());
-        assert!(!dir.join("texto.docx").exists());
-        assert!(dir.join("bom.epub").exists());
+        // in the library folder (LIB-05). Not even a folder — the check comes
+        // before `folder_for`.
+        assert!(!dir.join("protegido").exists());
+        assert!(!dir.join("texto").exists());
+        assert!(dir.join("bom").join("bom.epub").is_file());
         assert_eq!(select_books(&conn).unwrap().len(), 1);
     }
 
@@ -615,5 +805,295 @@ mod tests {
         let path = temp_dir("pdf").join("livro.pdf");
         std::fs::write(&path, b"%PDF-1.7 whatever").unwrap();
         assert_eq!(has_drm(&path), Ok(false));
+    }
+
+    #[test]
+    fn importing_puts_the_file_inside_a_folder_of_its_own() {
+        // READ-32.1, and the revocation of LIB-02 as written: the destination
+        // is `library/<folder>/<file>`, with nothing left loose in the root.
+        let conn = migrated();
+        let dir = empty_dir("own-folder");
+        let source = empty_dir("own-folder-src").join("livro.epub");
+        epub(&source, &["mimetype", "META-INF/container.xml"]);
+
+        let result = import_all(&conn, &dir, vec![source.to_string_lossy().to_string()]);
+        assert_eq!(result.imported.len(), 1, "{:?}", result.rejected);
+
+        assert!(
+            !dir.join("livro.epub").exists(),
+            "o arquivo continuou solto na raiz da biblioteca"
+        );
+        assert!(dir.join("livro").join("livro.epub").is_file());
+        assert_eq!(result.imported[0].filename, "livro.epub");
+        assert_eq!(
+            folder_of(&conn, &result.imported[0].id).as_deref(),
+            Some("livro"),
+            "a pasta não foi gravada na linha"
+        );
+    }
+
+    #[test]
+    fn two_books_that_would_share_a_folder_name_get_a_suffix() {
+        // READ-32.2. `a.pdf` and `a.epub` have the same stem and would both
+        // want the folder `a`. This is the case the design uses to justify
+        // storing the folder name instead of deriving it from the file name.
+        let conn = migrated();
+        let dir = empty_dir("folder-clash");
+        let src = empty_dir("folder-clash-src");
+        let pdf = src.join("a.pdf");
+        std::fs::write(&pdf, b"pdf").unwrap();
+        let ep = src.join("a.epub");
+        epub(&ep, &["mimetype", "META-INF/container.xml"]);
+
+        let result = import_all(
+            &conn,
+            &dir,
+            vec![
+                pdf.to_string_lossy().to_string(),
+                ep.to_string_lossy().to_string(),
+            ],
+        );
+        assert_eq!(result.imported.len(), 2, "{:?}", result.rejected);
+
+        let folders: Vec<Option<String>> = result
+            .imported
+            .iter()
+            .map(|b| folder_of(&conn, &b.id))
+            .collect();
+        assert_eq!(
+            folders,
+            vec![Some("a".to_string()), Some("a (2)".to_string())]
+        );
+        assert!(dir.join("a").join("a.pdf").is_file());
+        assert!(dir.join("a (2)").join("a.epub").is_file());
+        assert_eq!(std::fs::read(dir.join("a").join("a.pdf")).unwrap(), b"pdf");
+    }
+
+    #[test]
+    fn the_layout_migration_moves_a_loose_file_into_its_folder_and_records_it() {
+        // READ-32.3. An M10.1 library: the file sits loose in `library/` and
+        // the row has a NULL `folder`.
+        let conn = migrated();
+        let dir = empty_dir("legacy");
+        insert_book(&conn, "solto", "2026-01-01T00:00:00+00:00");
+        std::fs::write(dir.join("solto.pdf"), b"conteudo").unwrap();
+        assert_eq!(folder_of(&conn, "solto"), None);
+
+        assert_eq!(migrate_layout(&conn, &dir), 1);
+
+        assert!(!dir.join("solto.pdf").exists(), "o arquivo não saiu da raiz");
+        assert_eq!(
+            std::fs::read(dir.join("solto").join("solto.pdf")).unwrap(),
+            b"conteudo",
+            "o conteúdo mudou na mudança"
+        );
+        assert_eq!(folder_of(&conn, "solto").as_deref(), Some("solto"));
+        // The row stays listable: migrating must not make the book disappear.
+        assert_eq!(select_books(&conn).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn running_the_layout_migration_twice_moves_nothing_the_second_time() {
+        // READ-32.4. Idempotent by construction: the candidates are the rows
+        // with a NULL `folder`, and recording the folder takes a row off that
+        // list for good.
+        let conn = migrated();
+        let dir = empty_dir("legacy-twice");
+        insert_book(&conn, "solto", "2026-01-01T00:00:00+00:00");
+        std::fs::write(dir.join("solto.pdf"), b"conteudo").unwrap();
+        assert_eq!(migrate_layout(&conn, &dir), 1);
+
+        // Text already processed inside the folder: if the second pass touched
+        // anything, this is what it would destroy.
+        let original = dir.join("solto").join("original");
+        std::fs::create_dir_all(&original).unwrap();
+        std::fs::write(original.join("0001.txt"), b"pagina 1").unwrap();
+
+        assert_eq!(migrate_layout(&conn, &dir), 0, "moveu de novo");
+
+        assert!(dir.join("solto").join("solto.pdf").is_file());
+        assert_eq!(
+            std::fs::read(original.join("0001.txt")).unwrap(),
+            b"pagina 1"
+        );
+        assert!(
+            !dir.join("solto (2)").exists(),
+            "criou uma segunda pasta para o mesmo livro"
+        );
+        assert_eq!(folder_of(&conn, "solto").as_deref(), Some("solto"));
+    }
+
+    #[test]
+    fn a_file_that_cannot_be_moved_keeps_its_row_and_its_file() {
+        // READ-32.5. The failure is INJECTED through a `filename` carrying a
+        // path separator: the destination becomes `library/livro/sub/livro.pdf`,
+        // whose parent directory does not exist, and `fs::rename` fails with
+        // NotFound.
+        //
+        // INCONCLUSIVE ABOUT THE REAL-WORLD CAUSE: the move failures that
+        // actually happen on a user's machine are permission denied and file in
+        // use, and neither is portably reproducible in a test. What this test
+        // proves is the error BRANCH -- the row and the file are left exactly as
+        // they were, and no empty folder is left behind -- not that this is the
+        // condition that triggers it in practice.
+        let conn = migrated();
+        let dir = empty_dir("legacy-stuck");
+        let sub = dir.join("sub");
+        std::fs::create_dir_all(&sub).unwrap();
+        std::fs::write(sub.join("livro.pdf"), b"intacto").unwrap();
+        conn.execute(
+            "INSERT INTO books (id, filename, format, size_bytes, imported_at)
+             VALUES ('preso', 'sub/livro.pdf', 'pdf', 7, '2026-01-01T00:00:00+00:00')",
+            [],
+        )
+        .unwrap();
+
+        assert_eq!(migrate_layout(&conn, &dir), 0);
+
+        // Nothing is lost: the row is still there without a folder, and so is
+        // the file.
+        assert_eq!(folder_of(&conn, "preso"), None);
+        assert_eq!(select_books(&conn).unwrap().len(), 1);
+        assert_eq!(std::fs::read(sub.join("livro.pdf")).unwrap(), b"intacto");
+        assert!(
+            !dir.join("livro").exists(),
+            "sobrou uma pasta vazia da tentativa que falhou"
+        );
+    }
+
+    #[test]
+    fn a_row_whose_file_is_already_gone_is_skipped_without_failing_the_boot() {
+        // A library the user half-deleted by hand must not stop the app from
+        // opening: the orphan row is skipped and the books that still have a
+        // file are migrated.
+        let conn = migrated();
+        let dir = empty_dir("legacy-halfgone");
+        insert_book(&conn, "sumiu", "2026-01-01T00:00:00+00:00");
+        insert_book(&conn, "existe", "2026-02-02T00:00:00+00:00");
+        std::fs::write(dir.join("existe.pdf"), b"aqui").unwrap();
+
+        assert_eq!(migrate_layout(&conn, &dir), 1);
+
+        assert_eq!(
+            folder_of(&conn, "sumiu"),
+            None,
+            "inventou pasta para arquivo ausente"
+        );
+        assert!(!dir.join("sumiu").exists());
+        assert_eq!(folder_of(&conn, "existe").as_deref(), Some("existe"));
+        assert!(dir.join("existe").join("existe.pdf").is_file());
+        // Both rows are still listed: skipping is not deleting.
+        assert_eq!(select_books(&conn).unwrap().len(), 2);
+    }
+
+    #[test]
+    fn removing_a_book_deletes_its_folder_and_everything_in_it() {
+        // A direct consequence of READ-32: with the file inside the folder,
+        // deleting only `library/<file>` would leave the whole folder orphaned
+        // on disk, with no row left to find it by.
+        let conn = migrated();
+        let dir = empty_dir("delete-folder");
+        let source = empty_dir("delete-folder-src").join("livro.epub");
+        epub(&source, &["mimetype", "META-INF/container.xml"]);
+        let result = import_all(&conn, &dir, vec![source.to_string_lossy().to_string()]);
+        let id = result.imported[0].id.clone();
+        let pt = dir.join("livro").join("pt");
+        std::fs::create_dir_all(&pt).unwrap();
+        std::fs::write(pt.join("0001.txt"), b"traducao").unwrap();
+
+        assert_eq!(remove_book(&conn, &dir, &id), Ok(()));
+
+        assert!(!dir.join("livro").exists(), "a pasta do livro sobreviveu");
+        assert!(select_books(&conn).unwrap().is_empty());
+    }
+
+    /// How many files live under `dir`, at any depth. It is the number the
+    /// real-library rehearsal compares before and after.
+    fn count_files(dir: &Path) -> usize {
+        let Ok(entries) = std::fs::read_dir(dir) else {
+            return 0;
+        };
+        entries
+            .flatten()
+            .map(|e| {
+                let path = e.path();
+                if path.is_dir() {
+                    count_files(&path)
+                } else {
+                    1
+                }
+            })
+            .sum()
+    }
+
+    /// The rehearsal `AGENTS.md` demands before a destructive migration counts
+    /// as done, in the second `#[ignore]` format this codebase uses: the path
+    /// comes from an environment variable and is **never** guessed -- the same
+    /// shape as `db::real_database` and `runtime::process::sidecar_real`.
+    ///
+    /// WARNING: `READER_LEGACY_LIBRARY` must point at a **COPY** of a
+    /// `library/` folder. This test MOVES every book file it finds there. The
+    /// user's real library is never opened for writing.
+    ///
+    /// ```text
+    /// cargo test --lib migrate_legacy_layout_against_a_real_library_copy -- --ignored --nocapture
+    /// ```
+    #[test]
+    #[ignore = "requer READER_LEGACY_LIBRARY apontando para uma COPIA de biblioteca"]
+    fn migrate_legacy_layout_against_a_real_library_copy() {
+        let raw = std::env::var("READER_LEGACY_LIBRARY")
+            .expect("defina READER_LEGACY_LIBRARY com o caminho de uma COPIA da biblioteca");
+        let dir = PathBuf::from(raw);
+        assert!(dir.is_dir(), "{} não é uma pasta", dir.display());
+
+        // Only loose files in a supported format become rows: anything else in
+        // the folder is not a candidate and is never touched.
+        let mut loose: Vec<String> = std::fs::read_dir(&dir)
+            .unwrap()
+            .flatten()
+            .filter(|e| e.path().is_file() && is_supported_book(&e.path()))
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .collect();
+        loose.sort();
+
+        let files_before = count_files(&dir);
+        let conn = migrated();
+        for (i, name) in loose.iter().enumerate() {
+            conn.execute(
+                "INSERT INTO books (id, filename, format, size_bytes, imported_at)
+                 VALUES (?1, ?2, ?3, 0, '2026-01-01T00:00:00+00:00')",
+                params![format!("real-{i}"), name, extension_of(Path::new(name))],
+            )
+            .unwrap();
+        }
+
+        let moved = migrate_layout(&conn, &dir);
+        let files_after = count_files(&dir);
+        println!(
+            "READER_LEGACY_LIBRARY={}: {} arquivos antes, {} depois, {} de {} livros movidos",
+            dir.display(),
+            files_before,
+            files_after,
+            moved,
+            loose.len()
+        );
+
+        assert_eq!(
+            files_before, files_after,
+            "a migração perdeu ou duplicou arquivo"
+        );
+        assert_eq!(moved, loose.len(), "algum livro não foi movido");
+        for (i, name) in loose.iter().enumerate() {
+            let folder = folder_of(&conn, &format!("real-{i}")).expect("pasta não gravada");
+            assert!(
+                dir.join(&folder).join(name).is_file(),
+                "{name} não está em {folder}"
+            );
+            assert!(!dir.join(name).exists(), "{name} continuou solto");
+        }
+
+        // Second pass: idempotence against real data.
+        assert_eq!(migrate_layout(&conn, &dir), 0);
+        assert_eq!(count_files(&dir), files_after);
     }
 }

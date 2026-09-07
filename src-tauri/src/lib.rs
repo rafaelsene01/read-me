@@ -1,7 +1,10 @@
 // SPEC: embedded-runtime (EMBED-06), self-contained-runtime (SELF-01, SELF-18),
 //       conversation-memory (MEM-14, MEM-17),
 //       book-library (LIB-02, LIB-03, LIB-04, LIB-05, LIB-06, LIB-07, LIB-08,
-//       LIB-09, LIB-10, LIB-11, LIB-12)
+//       LIB-09, LIB-10, LIB-11, LIB-12),
+//       book-reader (READ-02, READ-09, READ-11, READ-13, READ-16, READ-17, READ-26,
+//       READ-27, READ-28, READ-29, READ-30, READ-32),
+//       reading-history (HIST-02, HIST-04, HIST-05, HIST-06, HIST-07)
 
 mod chat;
 mod chat_commands;
@@ -11,10 +14,15 @@ mod config_commands;
 mod db;
 mod document_commands;
 mod library_commands;
+mod reader_commands;
 mod runtime_commands;
 mod models;
 mod providers;
 mod rag;
+// `pub` because the reading half of the module — `read_page`,
+// `translated_pages`, `next_missing`, `split_paragraphs` — has no caller until
+// T6/T7; private would make them dead code and warn.
+pub mod reader;
 mod runtime;
 mod system_info;
 mod update;
@@ -112,6 +120,16 @@ pub fn run() {
 
             autostart_sidecar(app.handle());
             document_commands::requeue_unfinished_documents(app.handle());
+            // Libraries created before READ-32 keep their books loose in
+            // `library/`. Moving them is code, not SQL, so it runs here and
+            // not as a schema migration — and it is a no-op from the second
+            // boot on, because a book with its folder recorded is no longer a
+            // candidate.
+            library_commands::migrate_legacy_layout(app.handle());
+            // A book parked in `extracting` or `paginating` is the leftover of
+            // a quit mid-processing: there is no half extraction to resume, so
+            // it goes back to `imported` and the user can start it again.
+            reader_commands::reset_interrupted_processing(app.handle());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -153,6 +171,17 @@ pub fn run() {
             library_commands::list_books,
             library_commands::delete_book,
             library_commands::library_path,
+            reader_commands::process_book,
+            reader_commands::cancel_processing,
+            reader_commands::open_book,
+            reader_commands::save_reading_position,
+            reader_commands::get_book_page,
+            reader_commands::list_reading_history,
+            reader_commands::retranslate_pages,
+            reader_commands::add_language,
+            reader_commands::remove_language,
+            reader_commands::set_reading_language,
+            reader_commands::list_book_languages,
             update_commands::check_for_update,
             update_commands::install_update,
             update_commands::skip_update_version,

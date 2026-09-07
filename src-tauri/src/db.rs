@@ -1,6 +1,6 @@
 // SPEC: app-shell (SHELL-08), chat-messaging (CHAT-11), documents-rag (DOC-02),
 //       self-contained-runtime (SELF-06), conversation-memory (MEM-15, MEM-16),
-//       book-library (LIB-07)
+//       book-library (LIB-07), book-reader (READ-13, READ-17, READ-18)
 
 use rusqlite::Connection;
 use std::path::Path;
@@ -178,6 +178,28 @@ CREATE TABLE IF NOT EXISTS books (
 );
 ";
 
+/// The reader's columns on the book row. `ALTER TABLE` and no new table on
+/// purpose: the page text lives on disk under `<folder>/<lang>/`, so the only
+/// thing the database keeps is where the folder is and how far the user got.
+///
+/// `folder` is born NULL, and that NULL is the signal: it means "this row is
+/// still on the pre-reader layout", which is what the layout migration looks
+/// for. After it runs, NULL no longer occurs.
+///
+/// `last_page` and `last_opened_at` stay NULL until the first time the book is
+/// opened. That is what separates "imported" from "read": the history list is
+/// `WHERE last_opened_at IS NOT NULL`, so a book imported and never opened does
+/// not show up there.
+const MIGRATION_10_BOOK_READER: &str = "
+ALTER TABLE books ADD COLUMN folder           TEXT;
+ALTER TABLE books ADD COLUMN status           TEXT    NOT NULL DEFAULT 'imported';
+ALTER TABLE books ADD COLUMN error_message    TEXT;
+ALTER TABLE books ADD COLUMN page_count       INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE books ADD COLUMN reading_language TEXT;
+ALTER TABLE books ADD COLUMN last_page        INTEGER;
+ALTER TABLE books ADD COLUMN last_opened_at   TEXT;
+";
+
 /// Ordered list of schema versions. A migration is applied only when
 /// `PRAGMA user_version` is below its number, which is what makes a column
 /// change reach databases that already exist on disk — `CREATE TABLE IF NOT
@@ -192,6 +214,7 @@ const MIGRATIONS: &[(u32, &str)] = &[
     (7, MIGRATION_7_SINGLE_RUNTIME),
     (8, MIGRATION_8_CHAT_MEMORY),
     (9, MIGRATION_9_BOOKS),
+    (10, MIGRATION_10_BOOK_READER),
 ];
 
 fn user_version(conn: &Connection) -> Result<u32, String> {
@@ -256,6 +279,16 @@ mod tests {
             .prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
             .unwrap();
         stmt.query_map([], |row| row.get(0))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap()
+    }
+
+    fn column_names(conn: &Connection, table: &str) -> Vec<String> {
+        let mut stmt = conn
+            .prepare(&format!("PRAGMA table_info({table})"))
+            .unwrap();
+        stmt.query_map([], |row| row.get(1))
             .unwrap()
             .collect::<Result<_, _>>()
             .unwrap()
@@ -520,21 +553,18 @@ mod tests {
     }
 
     #[test]
-    fn a_fresh_database_gets_the_books_table_at_version_nine() {
+    fn a_fresh_database_gets_the_books_table() {
         let conn = migrated_in_memory();
 
-        assert_eq!(user_version(&conn).unwrap(), 9);
         assert!(table_names(&conn).contains(&"books".to_string()));
 
-        let mut stmt = conn.prepare("PRAGMA table_info(books)").unwrap();
-        let columns: Vec<String> = stmt
-            .query_map([], |row| row.get(1))
-            .unwrap()
-            .collect::<Result<_, _>>()
-            .unwrap();
+        // The five columns migration 9 creates must stay first and unchanged;
+        // migration 10 appends the reader's columns after them, which is why
+        // this asserts a prefix instead of the whole list.
+        let columns = column_names(&conn, "books");
         assert_eq!(
-            columns,
-            vec!["id", "filename", "format", "size_bytes", "imported_at"]
+            columns[..5],
+            ["id", "filename", "format", "size_bytes", "imported_at"]
         );
     }
 
@@ -560,13 +590,124 @@ mod tests {
 
         apply_migrations(&mut conn).unwrap();
 
-        assert_eq!(user_version(&conn).unwrap(), 9);
+        assert_eq!(user_version(&conn).unwrap(), MIGRATIONS.last().unwrap().0);
         for (table, expected) in [("chats", 1), ("messages", 1), ("documents", 1), ("books", 0)] {
             let count: i64 = conn
                 .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| row.get(0))
                 .unwrap();
             assert_eq!(count, expected, "{table} changed in the upgrade");
         }
+    }
+
+    /// Checked against the list, not against the plan: the plan for this feature
+    /// was written when the list ended at 9, and a stale number would compile
+    /// fine and simply never run, because `user_version` is already past it.
+    #[test]
+    fn book_reader_is_migration_ten() {
+        let position = MIGRATIONS
+            .iter()
+            .position(|(_, sql)| *sql == MIGRATION_10_BOOK_READER)
+            .expect("the migration must be registered in the list");
+        assert_eq!(MIGRATIONS[position].0, 10);
+    }
+
+    #[test]
+    fn a_fresh_database_gets_the_reader_columns_at_version_ten() {
+        let conn = migrated_in_memory();
+
+        assert_eq!(user_version(&conn).unwrap(), 10);
+        let columns = column_names(&conn, "books");
+        for expected in [
+            "folder",
+            "status",
+            "error_message",
+            "page_count",
+            "reading_language",
+            "last_page",
+            "last_opened_at",
+        ] {
+            assert!(
+                columns.contains(&expected.to_string()),
+                "books is missing {expected}: {columns:?}"
+            );
+        }
+    }
+
+    /// The upgrade path for a machine that already imported books with the M10.1
+    /// library: the row survives and lands on the defaults the reader expects.
+    #[test]
+    fn a_database_stopped_at_nine_upgrades_to_ten_keeping_its_books() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        for (version, sql) in MIGRATIONS.iter().take_while(|(v, _)| *v <= 9) {
+            conn.execute_batch(sql).unwrap();
+            conn.pragma_update(None, "user_version", *version).unwrap();
+        }
+        conn.execute_batch(
+            "INSERT INTO books (id, filename, format, size_bytes, imported_at)
+                VALUES ('b1', 'livro.pdf', 'pdf', 42, 'ontem');",
+        )
+        .unwrap();
+        assert_eq!(user_version(&conn).unwrap(), 9);
+
+        apply_migrations(&mut conn).unwrap();
+
+        assert_eq!(user_version(&conn).unwrap(), 10);
+        let (filename, status, page_count, last_page, last_opened_at): (
+            String,
+            String,
+            i64,
+            Option<i64>,
+            Option<String>,
+        ) = conn
+            .query_row(
+                "SELECT filename, status, page_count, last_page, last_opened_at
+                 FROM books WHERE id = 'b1'",
+                [],
+                |row| {
+                    Ok((
+                        row.get(0)?,
+                        row.get(1)?,
+                        row.get(2)?,
+                        row.get(3)?,
+                        row.get(4)?,
+                    ))
+                },
+            )
+            .expect("the book imported before the reader must survive the upgrade");
+        assert_eq!(filename, "livro.pdf");
+        assert_eq!(status, "imported");
+        assert_eq!(page_count, 0);
+        // Never opened yet, so it must not show up in the reading history, which
+        // is `WHERE last_opened_at IS NOT NULL`.
+        assert_eq!(last_page, None);
+        assert_eq!(last_opened_at, None);
+    }
+
+    /// NULL `folder` is the signal the layout migration looks for. If the column
+    /// were given a default, every old row would look already migrated and the
+    /// files on disk would stay where the old layout left them.
+    #[test]
+    fn folder_starts_null_so_the_layout_migration_can_find_old_rows() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        for (version, sql) in MIGRATIONS.iter().take_while(|(v, _)| *v <= 9) {
+            conn.execute_batch(sql).unwrap();
+            conn.pragma_update(None, "user_version", *version).unwrap();
+        }
+        conn.execute_batch(
+            "INSERT INTO books (id, filename, format, size_bytes, imported_at)
+                VALUES ('b1', 'a.pdf', 'pdf', 1, 'ontem'),
+                       ('b2', 'b.epub', 'epub', 2, 'hoje');",
+        )
+        .unwrap();
+
+        apply_migrations(&mut conn).unwrap();
+
+        let pending: i64 = conn
+            .query_row("SELECT COUNT(*) FROM books WHERE folder IS NULL", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(pending, 2, "every pre-reader row must still have folder NULL");
     }
 
     #[test]

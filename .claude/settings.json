@@ -15,5 +15,8 @@
       "PowerShell(git push:*)",
       "PowerShell(git push *)"
     ]
+  },
+  "worktree": {
+    "bgIsolation": "none"
   }
 }

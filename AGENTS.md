@@ -71,7 +71,7 @@ npm run test:scripts
 npm run tauri dev
 ```
 
-`cargo test --lib` está em **195 passando / 0 falhas / 15 ignorados** (medido em 2026-09-05, no fim da execução do M10.1). **O frontend não tem suíte:** `npm test` sai com *"No test files found"* (exit 1) — zero testes em zero arquivos. Os números anteriores desta linha (181/0/16 e 63 testes em 8 arquivos, de 2026-07-28) foram **medidos e desmentidos** em 2026-09-05: o baseline real antes do M10.1 era **177 / 0 / 15**. `npm run test:scripts` está em **49** e esse batia. Se qualquer um dos números cair, cada teste perdido precisa de justificativa — remoção legítima (o código que ele testava saiu) é aceitável; deleção silenciosa não.
+`cargo test --lib` está em **265 passando / 0 falhas / 16 ignorados** (medido em 2026-09-06 no fim da T15/T11 da `book-reader`; era **195 / 0 / 15** no fim do M10.1, e as tasks T2-T7/T14/T16/T17 somaram os 70 testes de diferença — nenhum foi perdido). **O frontend não tem suíte:** `npm test` sai com *"No test files found"* (exit 1) — zero testes em zero arquivos. Os números anteriores desta linha (181/0/16 e 63 testes em 8 arquivos, de 2026-07-28) foram **medidos e desmentidos** em 2026-09-05: o baseline real antes do M10.1 era **177 / 0 / 15**. `npm run test:scripts` está em **49** e esse batia. Se qualquer um dos números cair, cada teste perdido precisa de justificativa — remoção legítima (o código que ele testava saiu) é aceitável; deleção silenciosa não.
 
 Este número é baseline, então mantenha-o medido: ele ficou parado em 146 por várias sessões enquanto a suíte crescia, e um baseline defasado não detecta perda nenhuma — que é exatamente o que ele existe para fazer.
 
@@ -119,7 +119,7 @@ O segundo formato é o que impede um teste de encostar por acidente nos dados do
 
 ## Banco de dados
 
-Migrações versionadas por `PRAGMA user_version`, numa lista ordenada em `db.rs`, cada uma em transação. **A próxima é a 10** — a lista `MIGRATIONS` termina hoje na 9 (`MIGRATION_9_BOOKS`, a tabela `books` do M10.1; a 8 é `MIGRATION_8_CHAT_MEMORY`).
+Migrações versionadas por `PRAGMA user_version`, numa lista ordenada em `db.rs`, cada uma em transação. **A próxima é a 11** — a lista `MIGRATIONS` termina hoje na 10 (`MIGRATION_10_BOOK_READER`, as colunas de leitura em `books`; a 9 é `MIGRATION_9_BOOKS`).
 
 Confira o número na lista antes de escrever a migração, nunca aqui: esta linha já esteve errada, apontando a 8 depois de ela ter sido gasta. Duas migrações com o mesmo número não colidem em compilação — a segunda simplesmente nunca roda, porque o `user_version` já passou dela.
 
@@ -158,12 +158,3 @@ Detalhe completo em `.specs/codebase/CONVENTIONS.md`. O essencial:
 **Turnos precisam alternar.** Uma geração cancelada deixa a pergunta sem resposta, e dois `user` seguidos fazem o modelo divagar em vez de responder.
 
 **O sidecar é morto por Job Object no Windows**, além do `kill` explícito. Se mexer no spawn, não remova nenhum dos dois: um cobre o fechamento normal, o outro cobre o kill forçado.
-
----
-
-## Ao terminar uma tarefa
-
-1. Rode os gates (`cargo test`, `npm run build`, e `npm run test:scripts` se mexeu em `scripts/`).
-2. Atualize a rastreabilidade da spec afetada com o que ficou **verificado** e o que ficou pendente.
-3. Registre uma decisão nova em `STATE.md` se você escolheu algo não óbvio, com o motivo e o trade-off — inclusive quando a escolha foi sua e não do usuário.
-4. Relate o que **não** foi verificado. Essa parte não é opcional.

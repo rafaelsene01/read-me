@@ -1,8 +1,11 @@
 import { create } from "zustand";
 
-// SPEC: self-contained-runtime (SELF-01), book-library (LIB-09)
+// SPEC: self-contained-runtime (SELF-01), book-library (LIB-09),
+//       book-reader (READ-15), reading-history (HIST-01)
 
-export type ActiveView = "chat" | "settings" | "runtime" | "library";
+// `"chat"` is gone, not merely unrouted: a union member nothing renders is a
+// state the app can enter and show nothing (AD-052 item 4).
+export type ActiveView = "reader" | "settings" | "runtime" | "library";
 
 interface UiState {
   activeView: ActiveView;
@@ -10,6 +13,7 @@ interface UiState {
 }
 
 export const useUiStore = create<UiState>((set) => ({
-  activeView: "chat",
+  // The app opens on the reader, which is what it is for now.
+  activeView: "reader",
   setActiveView: (view) => set({ activeView: view }),
 }));

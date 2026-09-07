@@ -1,7 +1,7 @@
-// SPEC: app-shell (SHELL-01), book-library (LIB-09)
+// SPEC: app-shell (SHELL-01), book-library (LIB-09), reading-history (HIST-01)
 
 import { useTranslation } from "react-i18next";
-import { ChatList } from "./ChatList";
+import { ReadingList } from "./ReadingList";
 import { LibrarySection } from "./LibrarySection";
 import { RuntimeSection } from "./RuntimeSection";
 import { SettingsSection } from "./SettingsSection";
@@ -16,7 +16,7 @@ export function Sidebar() {
         <span className="text-sm font-semibold">{t("app.name")}</span>
       </div>
 
-      <ChatList />
+      <ReadingList />
       <LibrarySection />
       <RuntimeSection />
       <SettingsSection />

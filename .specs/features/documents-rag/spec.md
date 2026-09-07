@@ -74,7 +74,7 @@ O usuário quer importar documentos para uma base de conhecimento global e ter o
 
 **User Story**: Como usuário, quero ver todos os documentos importados com seu status, e poder remover os que não quero mais.
 
-⛔ **Revogado pela `book-library` (AD-052), executado em 2026-09-05.** A listagem e a remoção não têm mais tela; `DocumentsPanel.tsx` e `documentsStore.ts` seguem no repositório, órfãos de rota.
+⛔ **Revogado pela `book-library` (AD-052), executado em 2026-09-05.** A listagem e a remoção não têm mais tela; `documentsStore.ts` segue no repositório, órfão de rota. **`DocumentsPanel.tsx` foi apagado em 2026-09-06** (AD-056): ele comparava contra `setActiveView("chat")`, e ao sair `"chat"` da união o `tsc` falhava nele — deleção por obrigação do compilador, como a de `DocumentsSection.tsx`. `DocumentRow.tsx` e `DocumentStatusBadge.tsx` ficaram órfãos e **continuam no repositório**, compilando, à espera da remoção física da AD-052 item 4.
 
 **Why P1**: Gestão básica da base — sem isso, a base só cresce e não há como corrigir erros.
 
