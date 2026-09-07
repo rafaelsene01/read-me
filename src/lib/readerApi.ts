@@ -1,5 +1,6 @@
 // SPEC: book-reader (READ-02, READ-05, READ-16, READ-17, READ-26, READ-27,
-//       READ-29, READ-30), reading-history (HIST-02)
+//       READ-29, READ-30), reading-history (HIST-02, HIST-09),
+//       book-illustrations (ILLUS-07)
 
 import { invoke } from "@tauri-apps/api/core";
 import type { BookLanguage, BookPage, ReadingEntry } from "../types";
@@ -21,6 +22,11 @@ export const readerApi = {
   getBookPage: (bookId: string, page: number, language: string | null) =>
     invoke<BookPage>("get_book_page", { bookId, page, language }),
   listReadingHistory: () => invoke<ReadingEntry[]>("list_reading_history"),
+  /** Raw bytes, not a path: the asset protocol is disabled (ILLUS-07). */
+  getBookImage: (bookId: string, name: string) =>
+    invoke<ArrayBuffer>("get_book_image", { bookId, name }),
+  /** Clears the reading position. Deletes nothing on disk (HIST-09). */
+  forgetReadingEntry: (bookId: string) => invoke<void>("forget_reading_entry", { bookId }),
   /** `pages: null` redoes the whole language; `[]` only fills what is missing. */
   retranslatePages: (bookId: string, language: string, pages: number[] | null) =>
     invoke<void>("retranslate_pages", { bookId, language, pages }),

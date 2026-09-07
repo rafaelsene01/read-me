@@ -1,6 +1,8 @@
-// SPEC: book-reader (READ-02, READ-03, READ-08, READ-11, READ-12, READ-13, READ-14, READ-16,
+// SPEC: book-reader (READ-02, READ-03, READ-06, READ-08, READ-11, READ-12, READ-13, READ-14, READ-16,
 //       READ-17, READ-20, READ-21, READ-26, READ-27, READ-28, READ-29, READ-30),
-//       reading-history (HIST-02, HIST-04, HIST-05, HIST-06, HIST-07)
+//       reading-history (HIST-02, HIST-04, HIST-05, HIST-06, HIST-07, HIST-09),
+//       book-illustrations (ILLUS-03, ILLUS-07, ILLUS-09, ILLUS-10),
+//       epub-fidelity (FID-01, FID-02, FID-03, FID-05, FID-09, FID-11, FID-12)
 
 //! Turning an imported book into pages on disk.
 //!
@@ -14,7 +16,8 @@
 use crate::chat::cancellation::{CancellationRegistry, CancellationToken};
 use crate::db::{require_conn, DbState};
 use crate::rag::parsing::{extension_of, ParseError};
-use crate::reader::{epub, pagination, storage, translate};
+use crate::reader::illustrations::Illustration;
+use crate::reader::{epub, html, pagination, storage, translate};
 use crate::runtime::store::ActiveModel;
 use chrono::Utc;
 use rusqlite::{params, Connection, OptionalExtension};
@@ -152,10 +155,49 @@ fn book_paths(
 /// PDF goes through the extractor the document pipeline already uses, so the
 /// hyphen repair measured against the user's Civil Code import (L-003) applies
 /// to books too, with no second copy of it (READ-08).
-fn extract(file: &Path) -> Result<String, String> {
+/// What one book turned into: the pages already cut, the pictures, the CSS,
+/// and which format the pages are in.
+struct Extracted {
+    pages: Vec<String>,
+    images: Vec<Illustration>,
+    css: String,
+    /// `html` for an EPUB read faithfully, `txt` for everything else.
+    format: &'static str,
+}
+
+fn extract(file: &Path) -> Result<Extracted, String> {
     match extension_of(file).as_str() {
-        "pdf" => crate::rag::parsing::extract_pdf(file).map_err(|e| e.to_string()),
-        "epub" => epub::extract_epub_text(file).map_err(|e| e.to_string()),
+        "pdf" => {
+            let (text, images) =
+                crate::rag::parsing::extract_pdf_with_images(file).map_err(|e| e.to_string())?;
+            Ok(Extracted {
+                pages: pagination::paginate(&text),
+                images,
+                css: String::new(),
+                format: "txt",
+            })
+        }
+        // An EPUB is HTML+CSS already: keeping it is what makes the page look
+        // like the book (FID-01). The text extractor stays as the fallback for
+        // a file this cannot open structurally - a book that reads as plain
+        // text beats a book that does not open.
+        "epub" => match epub::extract_epub_html(file) {
+            Ok(book) => Ok(Extracted {
+                pages: html::paginate_blocks(&book.blocks),
+                images: book.images,
+                css: book.css,
+                format: "html",
+            }),
+            Err(_) => {
+                let (text, images) = epub::extract_epub(file).map_err(|e| e.to_string())?;
+                Ok(Extracted {
+                    pages: pagination::paginate(&text),
+                    images,
+                    css: String::new(),
+                    format: "txt",
+                })
+            }
+        },
         other => Err(ParseError::UnsupportedFormat(other.to_string()).to_string()),
     }
 }
@@ -175,8 +217,13 @@ fn wipe_languages(book_dir: &Path) -> std::io::Result<()> {
     };
     for entry in entries {
         let entry = entry?;
-        if entry.file_type()?.is_dir() {
-            storage::remove_lang(book_dir, &entry.file_name().to_string_lossy())?;
+        let name = entry.file_name().to_string_lossy().into_owned();
+        // `images/` and `styles/` are siblings of the language folders, not
+        // languages (FID-11). `write_images` and `write_css` are what clear
+        // them, right after this, so deleting them here would only be a second
+        // owner of the same folders.
+        if entry.file_type()?.is_dir() && !storage::is_reserved_dir(&name) {
+            storage::remove_lang(book_dir, &name)?;
         }
     }
     Ok(())
@@ -188,18 +235,34 @@ fn wipe_languages(book_dir: &Path) -> std::io::Result<()> {
 /// before any translation on purpose (the original is readable the moment
 /// pagination ends), and T6 is what hangs the loop off the end of this
 /// function.
+///
+/// `language` is the reading language the user picked in the dialog, `None`
+/// for "do not translate". It is recorded here, next to the wipe, and not at
+/// the end of the translation loop (READ-06, criterion 4) for two reasons
+/// found in T13:
+///
+/// - the loop can be cancelled mid-book (READ-14) and the pages it already
+///   wrote stay on disk. Writing at the end would leave a book with 40 of 300
+///   pages in `pt` opening entirely in English — the opposite of what was
+///   asked. Writing here costs nothing, because `get_book_page` already falls
+///   back to `original/` **per page** and says so in its `language` field, so
+///   an unfinished language never shows a blank reader;
+/// - `None` has to reach the column too. `wipe_languages` below deletes
+///   **every** language folder, so a reprocessing without translation must
+///   not leave the row pointing at a folder this run just removed.
 pub(crate) fn process_into_pages(
     conn: &Connection,
     library_dir: &Path,
     book_id: &str,
+    language: Option<&str>,
     cancelled: &CancellationToken,
     emit: &mut dyn FnMut(BookStatusEvent),
 ) -> Result<u32, String> {
     let (file, dir) = book_paths(conn, library_dir, book_id)?;
 
     set_status(conn, book_id, BookStatus::Extracting, None, 0, emit)?;
-    let text = match extract(&file) {
-        Ok(text) => text,
+    let extracted = match extract(&file) {
+        Ok(extracted) => extracted,
         // Nothing has been deleted at this point: the wipe below only runs
         // once there is text to replace the pages with. A failed extraction
         // therefore leaves `original/` as it was — empty on a first run — and
@@ -217,7 +280,14 @@ pub(crate) fn process_into_pages(
     }
 
     set_status(conn, book_id, BookStatus::Paginating, None, 0, emit)?;
-    let pages = pagination::paginate(&text);
+    // The cut happened inside `extract`, because only it knows whether a page
+    // is a run of characters or a list of blocks (FID-05).
+    let Extracted {
+        pages,
+        images,
+        css,
+        format,
+    } = extracted;
     if pages.is_empty() {
         let message = ParseError::NoTextFound.to_string();
         return Err(fail(conn, book_id, message, emit));
@@ -230,7 +300,16 @@ pub(crate) fn process_into_pages(
         Ok(path) => path,
         Err(e) => return Err(fail(conn, book_id, e.to_string(), emit)),
     };
-    if let Err(e) = storage::write_pages(&original, &pages) {
+    if let Err(e) = storage::write_pages_ext(&original, &pages, format) {
+        return Err(fail(conn, book_id, e.to_string(), emit));
+    }
+    if let Err(e) = storage::write_css(&dir, &css) {
+        return Err(fail(conn, book_id, e.to_string(), emit));
+    }
+    // After the wipe and next to the pages, for the same reason: the markers
+    // now on disk name these files, and a page pointing at a picture that was
+    // never written is a broken image on screen (ILLUS-03, ILLUS-09).
+    if let Err(e) = storage::write_images(&dir, &images) {
         return Err(fail(conn, book_id, e.to_string(), emit));
     }
 
@@ -247,6 +326,14 @@ pub(crate) fn process_into_pages(
         params![page_count, page_count - 1, book_id],
     )
     .map_err(|e| fail(conn, book_id, e.to_string(), emit))?;
+
+    // Written before the `ready` event, so the row the frontend re-reads when
+    // it sees `ready` already points at the folder the user asked for. Reuses
+    // `set_book_reading_language` and not a second UPDATE: it is the one place
+    // that maps `original` onto NULL, and two writers would be two chances to
+    // disagree on how "the extracted text" is spelled.
+    set_book_reading_language(conn, book_id, language)
+        .map_err(|e| fail(conn, book_id, e, emit))?;
 
     set_status(conn, book_id, BookStatus::Ready, None, page_count, emit)?;
     Ok(page_count)
@@ -343,8 +430,11 @@ async fn translate_language(
 }
 
 /// `language` is `None` for "do not translate", which is what the processing
-/// dialog pre-selects. It is a parameter and not a column on purpose: a book
-/// can be finished in `pt` and half done in `en` (READ-30).
+/// dialog pre-selects. What gets *translated* is a parameter and not a column
+/// on purpose: a book can be finished in `pt` and half done in `en` (READ-30).
+/// The choice is still recorded in `reading_language` — which folder to *read*
+/// — by `process_into_pages` (READ-06); without it the user waited ~63 min for
+/// a translation and then opened the book in English, with no error (T13).
 ///
 /// Returns the page count. The translation half runs **after** `ready`, so an
 /// interrupted or failed translation still leaves a readable book in
@@ -385,6 +475,7 @@ pub async fn process_book(
             require_conn(&guard)?,
             &dir,
             &book_id,
+            language.as_deref(),
             &cancelled,
             &mut |event| {
                 let _ = app.emit("book-status", event);
@@ -452,6 +543,9 @@ pub struct BookPage {
     /// text is this" always has an answer.
     pub language: String,
     pub text: String,
+    /// `html` when `text` is a whole document to drop into the reader's
+    /// sandboxed iframe, `txt` when it is plain text (FID-02, FID-09).
+    pub format: String,
 }
 
 /// One line of the sidebar's reading history (HIST-02).
@@ -553,29 +647,139 @@ pub(crate) fn page_text(
 
     if let Some(language) = language.filter(|l| *l != storage::ORIGINAL_DIR) {
         let translated = storage::lang_dir(&dir, language).map_err(|e| e.to_string())?;
-        if let Ok(text) = storage::read_page(&translated, number) {
-            return Ok(BookPage {
-                page,
-                page_count,
-                language: language.to_string(),
-                text,
-            });
+        if let Some((path, format)) = storage::existing_page(&translated, number) {
+            if let Ok(text) = std::fs::read_to_string(&path) {
+                return Ok(rendered(page, page_count, language, &text, format, &dir));
+            }
         }
     }
 
     let original = storage::lang_dir(&dir, storage::ORIGINAL_DIR).map_err(|e| e.to_string())?;
-    let text = storage::read_page(&original, number).map_err(|_| {
+    let (path, format) = storage::existing_page(&original, number).ok_or_else(|| {
         // The book's folder can be deleted from the explorer while the row
         // stays: the library keeps listing it, and opening it has to say why
         // there is nothing to read instead of showing a blank page.
         "Os arquivos deste livro não estão mais no disco; reprocesse o livro".to_string()
     })?;
-    Ok(BookPage {
+    let text = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
+    Ok(rendered(
         page,
         page_count,
-        language: storage::ORIGINAL_DIR.to_string(),
+        storage::ORIGINAL_DIR,
+        &text,
+        format,
+        &dir,
+    ))
+}
+
+/// Turns a page file into what the reader shows.
+///
+/// For an HTML page that means **the whole document**: the book's stylesheet
+/// and the page's blocks, with every `<img src="NNNN.ext">` swapped for a
+/// `data:` URI (FID-02, FID-03). Assembling it here and not in the frontend is
+/// what makes the iframe possible at all — a sandbox without
+/// `allow-same-origin` has an opaque origin, so a `blob:` the app created is
+/// unreadable inside it and no asset command would help.
+///
+/// ponytail: base64 inflates the bytes by about a third, per page, per view.
+/// The upgrade is `allow-same-origin` plus `blob:` URLs, which loosens the
+/// sandbox — measure a real illustrated book before paying that.
+fn rendered(
+    page: u32,
+    page_count: u32,
+    language: &str,
+    text: &str,
+    format: &'static str,
+    book_dir: &Path,
+) -> BookPage {
+    let text = if format == "html" {
+        document(&storage::read_css(book_dir), text, book_dir)
+    } else {
+        text.to_string()
+    };
+    BookPage {
+        page,
+        page_count,
+        language: language.to_string(),
         text,
-    })
+        format: format.to_string(),
+    }
+}
+
+/// The base stylesheet, under the book's own. It only sets the page: the book
+/// decides its typography, and anything here that the book also sets loses.
+///
+/// **No `max-width`.** A reading measure of ~38rem is the typographic answer and it
+/// was what this had; the user asked for the page to use the whole panel, and the
+/// panel is the window they chose. Resizing the window is how the measure is set now.
+const READER_CSS: &str = "html{-webkit-text-size-adjust:100%}\
+body{margin:0;padding:2rem 2.5rem;background:#fbfaf7;color:#1a1a1a;\
+font-family:Georgia,'Times New Roman',serif;font-size:1.05rem;line-height:1.6;\
+text-rendering:optimizeLegibility}\
+img{max-width:100%;height:auto}\
+p{margin:0 0 1em}";
+
+fn document(css: &str, page_html: &str, book_dir: &Path) -> String {
+    let body = inline_images(page_html, book_dir);
+    format!(
+        "<!doctype html><html><head><meta charset=\"utf-8\">\
+         <style>{READER_CSS}</style><style>{css}</style></head><body>{body}</body></html>"
+    )
+}
+
+/// Replaces `src="NNNN.ext"` with the file's bytes as a `data:` URI. A picture
+/// that is not on disk keeps its name and simply does not render — one missing
+/// image never costs the page.
+fn inline_images(page_html: &str, book_dir: &Path) -> String {
+    let mut out = String::with_capacity(page_html.len());
+    let mut rest = page_html;
+    while let Some(at) = rest.find("src=\"") {
+        let after = &rest[at + 5..];
+        let Some(end) = after.find('"') else { break };
+        let name = &after[..end];
+        out.push_str(&rest[..at + 5]);
+        match storage::read_image(book_dir, name).ok() {
+            Some(bytes) => {
+                out.push_str(&format!("data:{};base64,{}", mime_of(name), base64(&bytes)));
+            }
+            None => out.push_str(name),
+        }
+        rest = &after[end..];
+    }
+    out.push_str(rest);
+    out
+}
+
+fn mime_of(name: &str) -> &'static str {
+    match name.rsplit_once('.').map(|(_, e)| e) {
+        Some("png") => "image/png",
+        Some("gif") => "image/gif",
+        Some("svg") => "image/svg+xml",
+        Some("webp") => "image/webp",
+        // JPEG is the default because it is what scanned plates in a book are,
+        // and a wrong guess only costs the browser a sniff.
+        _ => "image/jpeg",
+    }
+}
+
+/// Standard base64. Sixteen lines instead of a dependency, and the alphabet is
+/// fixed by RFC 4648 - there is nothing here to keep up to date.
+fn base64(bytes: &[u8]) -> String {
+    const ALPHABET: &[u8; 64] =
+        b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::with_capacity(bytes.len().div_ceil(3) * 4);
+    for chunk in bytes.chunks(3) {
+        let b = [chunk[0], *chunk.get(1).unwrap_or(&0), *chunk.get(2).unwrap_or(&0)];
+        let n = u32::from(b[0]) << 16 | u32::from(b[1]) << 8 | u32::from(b[2]);
+        for i in 0..4 {
+            if i <= chunk.len() {
+                out.push(ALPHABET[(n >> (18 - 6 * i)) as usize & 63] as char);
+            } else {
+                out.push('=');
+            }
+        }
+    }
+    out
 }
 
 /// The books opened at least once, most recently opened first (HIST-02).
@@ -606,6 +810,27 @@ pub(crate) fn reading_history(conn: &Connection) -> Result<Vec<ReadingEntry>, St
         .collect::<Result<Vec<_>, _>>()
         .map_err(|e| e.to_string())?;
     Ok(entries)
+}
+
+/// Forgets that a book was read: it leaves the history and starts over (HIST-09).
+///
+/// Both columns go back to NULL in the same statement. `last_opened_at` is
+/// what `reading_history` filters on, so it is what takes the row off the
+/// sidebar; `last_page` goes with it because the user was asked to confirm
+/// losing the position - keeping it would resurrect an old page on the next
+/// open. Nothing on disk is touched: deleting the book itself is
+/// `library_commands::remove_book` (HIST-08), a different action.
+pub(crate) fn forget_position(conn: &Connection, book_id: &str) -> Result<(), String> {
+    let updated = conn
+        .execute(
+            "UPDATE books SET last_opened_at = NULL, last_page = NULL WHERE id = ?1",
+            params![book_id],
+        )
+        .map_err(|e| e.to_string())?;
+    if updated == 0 {
+        return Err("Livro não encontrado".to_string());
+    }
+    Ok(())
 }
 
 /// Returns the page to resume at, zero-based.
@@ -640,10 +865,43 @@ pub fn get_book_page(
     )
 }
 
+/// The bytes of one illustration (ILLUS-07).
+///
+/// Raw bytes through `tauri::ipc::Response`, not `convertFileSrc`: the asset
+/// protocol is disabled in `tauri.conf.json` and there is no asset permission
+/// in the generated schema, so that route would mean new config, new
+/// capabilities and a runtime scope over a folder that lives outside the
+/// repository. This command needs none of the three.
+///
+/// `name` is the only string of this feature that comes back from the
+/// frontend. `storage::read_image` is what refuses anything that is not
+/// exactly `NNNN.<ext>`, so the check has one home and not two.
+#[tauri::command]
+pub fn get_book_image(
+    app: AppHandle,
+    db: State<DbState>,
+    book_id: String,
+    name: String,
+) -> Result<tauri::ipc::Response, String> {
+    let library = crate::library_commands::library_dir(&app)?;
+    let guard = db.0.lock().map_err(|e| e.to_string())?;
+    let (_, dir) = book_paths(require_conn(&guard)?, &library, &book_id)?;
+    let bytes = storage::read_image(&dir, &name).map_err(|e| e.to_string())?;
+    Ok(tauri::ipc::Response::new(bytes))
+}
+
 #[tauri::command]
 pub fn list_reading_history(db: State<DbState>) -> Result<Vec<ReadingEntry>, String> {
     let guard = db.0.lock().map_err(|e| e.to_string())?;
     reading_history(require_conn(&guard)?)
+}
+
+/// Clears the reading position only. The book, its file and every translation
+/// folder stay on disk (HIST-09).
+#[tauri::command]
+pub fn forget_reading_entry(db: State<DbState>, book_id: String) -> Result<(), String> {
+    let guard = db.0.lock().map_err(|e| e.to_string())?;
+    forget_position(require_conn(&guard)?, &book_id)
 }
 
 /// One language folder of a book, with what is actually on disk in it.
@@ -814,6 +1072,10 @@ pub(crate) fn book_languages(
     let mut languages: Vec<BookLanguage> = entries
         .flatten()
         .filter(|entry| entry.file_type().map(|t| t.is_dir()).unwrap_or(false))
+        // Without this the illustrations and stylesheet folders would show up
+        // in the reader's language picker as languages called "images" and
+        // "styles", with absurd page counts (FID-11).
+        .filter(|entry| !storage::is_reserved_dir(&entry.file_name().to_string_lossy()))
         .map(|entry| {
             let language = entry.file_name().to_string_lossy().into_owned();
             BookLanguage {
@@ -999,8 +1261,112 @@ mod tests {
         dir
     }
 
+    /// O mesmo EPUB de `write_epub`, com uma gravura no fim do capítulo.
+    /// Os bytes não precisam ser um PNG de verdade: nada nesta metade do
+    /// caminho decodifica a imagem — o EPUB traz o arquivo pronto.
+    fn write_illustrated_epub(path: &Path, images: usize) {
+        let body: String = (0..images)
+            .map(|i| format!("<p>parágrafo {i}</p><img src=\"img{i}.png\"/>"))
+            .collect();
+        let opf = r#"<?xml version="1.0"?><package version="3.0" xmlns="http://www.idpf.org/2007/opf">
+<manifest><item id="c1" href="c1.xhtml" media-type="application/xhtml+xml"/></manifest>
+<spine><itemref idref="c1"/></spine></package>"#;
+        let container = r#"<?xml version="1.0"?>
+<container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
+  <rootfiles><rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/></rootfiles>
+</container>"#;
+        let file = std::fs::File::create(path).unwrap();
+        let mut writer = zip::ZipWriter::new(file);
+        let opts = zip::write::SimpleFileOptions::default();
+        writer.start_file::<_, ()>("META-INF/container.xml", opts).unwrap();
+        writer.write_all(container.as_bytes()).unwrap();
+        writer.start_file::<_, ()>("OEBPS/content.opf", opts).unwrap();
+        writer.write_all(opf.as_bytes()).unwrap();
+        writer.start_file::<_, ()>("OEBPS/c1.xhtml", opts).unwrap();
+        writer
+            .write_all(format!("<html><body>{body}</body></html>").as_bytes())
+            .unwrap();
+        for i in 0..images {
+            writer
+                .start_file::<_, ()>(format!("OEBPS/img{i}.png"), opts)
+                .unwrap();
+            writer.write_all(format!("bytes-{i}").as_bytes()).unwrap();
+        }
+        writer.finish().unwrap();
+    }
+
+    #[test]
+    fn the_images_folder_is_not_a_language_and_survives_the_wipe_that_eats_languages() {
+        // ILLUS-10. Sem as duas exceções, `images/` apareceria no seletor de
+        // idioma do leitor com uma contagem de páginas absurda, e sumiria no
+        // primeiro reprocessamento.
+        let conn = migrated();
+        let lib = library("images-not-a-language");
+        let dir = insert_book(&conn, &lib, "b1", "livro.epub");
+        write_illustrated_epub(&dir.join("livro.epub"), 3);
+
+        process(&conn, &lib, "b1").unwrap();
+
+        let images = storage::images_dir(&dir).unwrap();
+        assert!(images.exists(), "as gravuras não foram gravadas");
+        assert_eq!(storage::read_image(&dir, "0002.png").unwrap(), b"bytes-1");
+
+        let languages = book_languages(&conn, &lib, "b1").unwrap();
+        assert_eq!(
+            languages.iter().map(|l| l.language.as_str()).collect::<Vec<_>>(),
+            vec!["original"],
+            "`images/` foi listada como idioma"
+        );
+
+        // Reprocessar: o wipe apaga os idiomas e NÃO pode levar as gravuras;
+        // quem as substitui é `write_images` (ILLUS-09).
+        write_illustrated_epub(&dir.join("livro.epub"), 1);
+        process(&conn, &lib, "b1").unwrap();
+
+        let mut names: Vec<String> = std::fs::read_dir(&images)
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        names.sort();
+        assert_eq!(names, vec!["0001.png"], "sobrou gravura da rodada anterior");
+        assert_eq!(storage::read_image(&dir, "0001.png").unwrap(), b"bytes-0");
+    }
+
+    #[test]
+    fn every_image_written_is_pointed_at_by_a_page_and_arrives_inlined() {
+        // FID-03, nos dois pontos onde as metades se encontram: o `<img>` na
+        // página em disco aponta para um arquivo que existe, e o documento
+        // que chega à tela traz os bytes dentro dele — um iframe sandbox tem
+        // origem opaca e não buscaria o arquivo sozinho.
+        let conn = migrated();
+        let lib = library("images-match-pages");
+        let dir = insert_book(&conn, &lib, "b1", "livro.epub");
+        write_illustrated_epub(&dir.join("livro.epub"), 4);
+
+        let page_count = process(&conn, &lib, "b1").unwrap();
+
+        let original = storage::lang_dir(&dir, storage::ORIGINAL_DIR).unwrap();
+        assert_eq!(storage::existing_page(&original, 1).unwrap().1, "html");
+        let all: String = (1..=page_count)
+            .map(|p| storage::read_page(&original, p).unwrap())
+            .collect::<Vec<_>>()
+            .join("\n\n");
+        for i in 1..=4 {
+            let name = format!("{i:04}.png");
+            assert!(all.contains(&format!("src=\"{name}\"")), "página nenhuma cita {name}");
+            assert!(storage::read_image(&dir, &name).is_ok(), "{name} não está em disco");
+        }
+        assert!(storage::read_image(&dir, "0005.png").is_err());
+        // O nome não sobrevive na tela: ele vira os bytes (ponytail: base64).
+        let shown = page_text(&conn, &lib, "b1", 0, None).unwrap();
+        assert!(!shown.text.contains("src=\"0001.png\""));
+        assert!(shown.text.contains("src=\"data:image/png;base64,"));
+    }
+
+    /// `language: None` = "não traduzir", o padrão do diálogo. Os testes que
+    /// olham a coluna passam o idioma direto por `process_into_pages`.
     fn process(conn: &Connection, lib: &Path, id: &str) -> Result<u32, String> {
-        process_into_pages(conn, lib, id, &CancellationToken::default(), &mut |_| {})
+        process_into_pages(conn, lib, id, None, &CancellationToken::default(), &mut |_| {})
     }
 
     /// Um livro de `pages` páginas já processado, com cada idioma de `langs`
@@ -1062,7 +1428,8 @@ mod tests {
         .unwrap()
     }
 
-    fn txt_files(dir: &Path) -> usize {
+    /// Page files of either format, recursively (FID-09).
+    fn page_files(dir: &Path) -> usize {
         let Ok(entries) = std::fs::read_dir(dir) else {
             return 0;
         };
@@ -1070,9 +1437,13 @@ mod tests {
             .flatten()
             .map(|e| {
                 if e.file_type().map(|t| t.is_dir()).unwrap_or(false) {
-                    txt_files(&e.path())
+                    page_files(&e.path())
                 } else {
-                    usize::from(e.path().extension().is_some_and(|x| x == "txt"))
+                    usize::from(
+                        e.path()
+                            .extension()
+                            .is_some_and(|x| x == "txt" || x == "html"),
+                    )
                 }
             })
             .sum()
@@ -1138,7 +1509,7 @@ mod tests {
         assert_eq!(status, "error");
         assert_eq!(message.as_deref(), Some(err.as_str()));
         assert_eq!(pages, 0);
-        assert_eq!(txt_files(&dir), 0, "a falha gravou página");
+        assert_eq!(page_files(&dir), 0, "a falha gravou página");
     }
 
     #[test]
@@ -1192,7 +1563,7 @@ mod tests {
 
         assert!(!dir.exists(), "a pasta do livro ficou no disco");
         assert!(neighbour.join("outro.epub").is_file(), "o vizinho foi junto");
-        assert!(txt_files(&neighbour) > 0, "as páginas do vizinho foram junto");
+        assert!(page_files(&neighbour) > 0, "as páginas do vizinho foram junto");
     }
 
     #[test]
@@ -1303,6 +1674,7 @@ mod tests {
             &conn,
             &lib,
             "b1",
+            None,
             &CancellationToken::default(),
             &mut |event| seen.push((event.status, event.total)),
         )
@@ -1327,11 +1699,12 @@ mod tests {
 
         let cancelled = CancellationToken::default();
         cancelled.cancel();
-        let err = process_into_pages(&conn, &lib, "b1", &cancelled, &mut |_| {}).unwrap_err();
+        let err =
+            process_into_pages(&conn, &lib, "b1", None, &cancelled, &mut |_| {}).unwrap_err();
 
         assert_eq!(err, "processamento cancelado");
         assert_eq!(status_of(&conn, "b1").0, "imported");
-        assert_eq!(txt_files(&dir), 0, "o cancelamento gravou página");
+        assert_eq!(page_files(&dir), 0, "o cancelamento gravou página");
     }
 
     /// Grava `last_opened_at` direto, como a `book-library` já faz para
@@ -1444,6 +1817,73 @@ mod tests {
     }
 
     #[test]
+    fn deleting_a_history_entry_forgets_the_position_and_keeps_the_book() {
+        // HIST-09, AC 2/3/5. O oposto de `removing_a_book_removes_its_whole_folder`:
+        // aqui nada em disco é tocado — só as duas colunas voltam a NULL.
+        let lib = library("forget-entry");
+        let conn = migrated();
+        let dir = translated_book(&conn, &lib, "b1", 10, &["pt", "en"]);
+        let neighbour = translated_book(&conn, &lib, "b2", 4, &[]);
+        let files_before = page_files(&dir);
+        for id in ["b1", "b2"] {
+            open_position(&conn, id).unwrap();
+        }
+        save_position(&conn, "b1", 7).unwrap();
+        save_position(&conn, "b2", 2).unwrap();
+
+        forget_position(&conn, "b1").unwrap();
+
+        // AC 2: as duas colunas, não só a que tira do histórico.
+        assert_eq!(last_opened(&conn, "b1"), None);
+        assert_eq!(status_of(&conn, "b1").3, None, "last_page sobreviveu");
+        // AC 5: a outra entrada continua no histórico, na posição dela.
+        let entries = reading_history(&conn).unwrap();
+        assert_eq!(entries.len(), 1, "{entries:?}");
+        assert_eq!(entries[0].id, "b2");
+        assert_eq!(entries[0].last_page, 2, "a posição do vizinho foi junto");
+        // AC 3: o livro continua na Biblioteca, com o arquivo importado e as
+        // duas pastas de tradução intactas.
+        assert!(dir.join("b1.epub").is_file(), "o arquivo importado sumiu");
+        for lang in [storage::ORIGINAL_DIR, "pt", "en"] {
+            assert!(
+                storage::lang_dir(&dir, lang).unwrap().is_dir(),
+                "{lang}/ sumiu do disco"
+            );
+        }
+        assert_eq!(page_files(&dir), files_before, "páginas foram apagadas");
+        assert!(neighbour.join("b2.epub").is_file());
+        let (status, _, page_count, _) = status_of(&conn, "b1");
+        assert_eq!((status.as_str(), page_count), ("ready", 10));
+    }
+
+    #[test]
+    fn a_book_deleted_from_the_history_reopens_at_the_first_page() {
+        // HIST-09, AC 4. Zerar `last_page` junto é o que faz a reabertura cair
+        // na primeira página em vez de ressuscitar a posição antiga.
+        let lib = library("forget-reopen");
+        let conn = migrated();
+        translated_book(&conn, &lib, "b1", 10, &[]);
+        open_position(&conn, "b1").unwrap();
+        save_position(&conn, "b1", 7).unwrap();
+        assert_eq!(open_position(&conn, "b1").unwrap(), 7);
+
+        forget_position(&conn, "b1").unwrap();
+
+        assert_eq!(open_position(&conn, "b1").unwrap(), 0);
+        // Reabrir devolve o livro ao histórico — apagar esquece a posição, não
+        // proíbe o livro.
+        assert_eq!(reading_history(&conn).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn forgetting_a_book_that_does_not_exist_is_an_error() {
+        // Mesmo contrato de `open_position`/`save_position`: 0 linhas afetadas
+        // vira erro em vez de sucesso silencioso.
+        let conn = migrated();
+        assert!(forget_position(&conn, "nao-existe").is_err());
+    }
+
+    #[test]
     fn an_imported_book_never_opened_is_not_in_the_history() {
         // `WHERE last_opened_at IS NOT NULL`: é o que separa "importado" de
         // "lido". A Biblioteca lista os dois; a lateral, só o segundo.
@@ -1503,11 +1943,20 @@ mod tests {
 
         let pending = page_text(&conn, &lib, "b1", 1, Some("pt")).unwrap();
         assert_eq!(pending.language, storage::ORIGINAL_DIR);
-        assert_eq!(
-            pending.text,
+        // O EPUB agora sai em HTML, e `page_text` devolve o documento montado
+        // para o iframe (FID-02) — a página do livro está dentro dele.
+        assert_eq!(pending.format, "html");
+        let on_disk =
             storage::read_page(&storage::lang_dir(&dir, storage::ORIGINAL_DIR).unwrap(), 2)
-                .unwrap()
+                .unwrap();
+        assert!(
+            pending.text.contains(&on_disk),
+            "o documento montado não contém a página que está em disco"
         );
+        assert!(pending.text.starts_with("<!doctype html>"));
+        // A página escrita à mão como `.txt` continua saindo como texto puro,
+        // que é o caminho do formato antigo (FID-09).
+        assert_eq!(translated.format, "txt");
 
         // Base 0 na fronteira, base 1 no disco: pedir a última página existe,
         // pedir a seguinte é erro em vez de arquivo não encontrado.
@@ -1629,6 +2078,65 @@ mod tests {
     }
 
     #[test]
+    fn processing_records_the_chosen_language_on_the_book() {
+        // READ-06, critério 4. O defeito que este teste tranca (T13, defeito
+        // 3): `process_book` recebia o idioma, traduzia para ele e NUNCA
+        // escrevia a coluna. O usuário esperava ~63 min por uma tradução em
+        // `pt` e o leitor abria em inglês, sem erro nenhum — nenhum gate
+        // pegava, porque escrita ausente não é tipo errado.
+        //
+        // ⚠️ O que roda aqui é `process_into_pages` contra banco em memória +
+        // pasta temporária. A tradução em si NÃO é exercitada (precisa do
+        // sidecar), e ninguém viu o livro abrir traduzido na tela: isso
+        // continua sendo o UAT da T13.
+        let lib = library("records-language");
+        let conn = migrated();
+        let dir = insert_book(&conn, &lib, "b1", "livro.epub");
+        write_epub(&dir.join("livro.epub"), 6, 1_000);
+
+        // Gravado ao fim da paginação, não ao fim da tradução: uma tradução
+        // cancelada no meio (READ-14) deixa páginas em disco, e o livro tem de
+        // abrir no idioma pedido com as que faltam caindo para `original/`.
+        process_into_pages(
+            &conn,
+            &lib,
+            "b1",
+            Some("pt"),
+            &CancellationToken::default(),
+            &mut |_| {},
+        )
+        .unwrap();
+        assert_eq!(
+            reading_language(&conn, "b1"),
+            Some("pt".to_string()),
+            "o idioma escolhido não foi registrado no livro"
+        );
+
+        // Reprocessar sem traduzir tem de LIMPAR a coluna: `wipe_languages`
+        // acabou de apagar a pasta `pt/`, e a linha não pode continuar
+        // apontando para ela.
+        process(&conn, &lib, "b1").unwrap();
+        assert_eq!(
+            reading_language(&conn, "b1"),
+            None,
+            "o livro continuou apontando para um idioma que foi apagado"
+        );
+
+        // Uma representação só para "o texto extraído", a mesma decisão que
+        // `set_book_reading_language` já toma: `original` é gravado como NULL.
+        process_into_pages(
+            &conn,
+            &lib,
+            "b1",
+            Some(storage::ORIGINAL_DIR),
+            &CancellationToken::default(),
+            &mut |_| {},
+        )
+        .unwrap();
+        assert_eq!(reading_language(&conn, "b1"), None);
+    }
+
+    #[test]
     fn changing_the_reading_language_deletes_nothing() {
         // READ-27, o inverso do que a versão anterior do plano fazia: trocar o
         // idioma de leitura limpava todas as traduções, porque só cabia uma.
@@ -1639,7 +2147,7 @@ mod tests {
             .iter()
             .map(|lang| bytes_in(&storage::lang_dir(&dir, lang).unwrap()))
             .collect();
-        assert_eq!(txt_files(&dir), 30);
+        assert_eq!(page_files(&dir), 30);
 
         set_book_reading_language(&conn, "b1", Some("en")).unwrap();
         set_book_reading_language(&conn, "b1", Some("pt")).unwrap();
@@ -1649,7 +2157,7 @@ mod tests {
             .map(|lang| bytes_in(&storage::lang_dir(&dir, lang).unwrap()))
             .collect();
         assert_eq!(after, before, "trocar o idioma de leitura mexeu em arquivo");
-        assert_eq!(txt_files(&dir), 30);
+        assert_eq!(page_files(&dir), 30);
         assert_eq!(reading_language(&conn, "b1"), Some("pt".to_string()));
         // Voltar ao original é NULL, e não a string "original": `page_text`
         // trata os dois igual, e uma representação só é menos para lembrar.
@@ -1657,7 +2165,7 @@ mod tests {
         assert_eq!(reading_language(&conn, "b1"), None);
         set_book_reading_language(&conn, "b1", None).unwrap();
         assert_eq!(reading_language(&conn, "b1"), None);
-        assert_eq!(txt_files(&dir), 30);
+        assert_eq!(page_files(&dir), 30);
     }
 
     #[test]

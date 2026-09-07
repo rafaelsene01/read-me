@@ -68,6 +68,19 @@ pub(crate) fn extract_pdf(path: &Path) -> Result<String, ParseError> {
     Ok(rejoin_hyphenated_words(&text))
 }
 
+/// The reader's entry point when it wants the illustrations too (ILLUS-02).
+///
+/// `extract_pdf` above keeps its signature on purpose: the document pipeline
+/// has no use for pictures, and changing the shared function would drag the
+/// RAG side into this feature for nothing.
+pub(crate) fn extract_pdf_with_images(
+    path: &Path,
+) -> Result<(String, Vec<crate::reader::illustrations::Illustration>), ParseError> {
+    let (text, images) =
+        super::pdfium::extract_text_and_images(path).map_err(ParseError::ReadFailed)?;
+    Ok((rejoin_hyphenated_words(&text), images))
+}
+
 /// A PDF breaks words across lines, and the extractor turns that break into
 /// "liqui- dação" or "empre- sário". Left alone, those halves are what gets
 /// embedded and what the model reads — seen in the user's Civil Code import.

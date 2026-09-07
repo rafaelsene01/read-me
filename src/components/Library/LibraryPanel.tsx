@@ -132,8 +132,8 @@ export function LibraryPanel() {
                   onRemove={() => deleteBook(book.id)}
                   onProcess={() => setDialogBook(book)}
                   onCancel={() => void cancelProcessing(book.id)}
-                  // Loads the book into the reader store; the `reader` view that
-                  // renders it is routed by T11, which owns uiStore and App.tsx.
+                  // `openBook` switches to the reader view itself - see the
+                  // comment on it. This row only says which book.
                   onRead={() => void openBook(book.id, book.reading_language)}
                   onEdit={() => setEditingBookId(editingBookId === book.id ? null : book.id)}
                 />

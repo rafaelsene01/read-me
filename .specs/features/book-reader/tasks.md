@@ -832,7 +832,25 @@ Sem código. O que a `.claude/rules/spec-driven-changes.md` item 4 exige quando 
 
 ---
 
-### T13: UAT: abrir o app e ler um livro
+### T13: UAT: abrir o app e ler um livro — ⚙️ EM ANDAMENTO (2026-09-06): 3 defeitos achados e corrigidos
+
+**Achado e corrigido nesta task (o conserto é desta task, como o plano previa):** processar um PDF falhava com *"não foi possível ler o arquivo: não foi possível carregar o pdfium: PdfiumLibraryBindingsAlreadyInitialized"*. Não era do leitor: `rag::pdfium::extract_text` rebindava a biblioteca a cada chamada, e o **segundo PDF de qualquer execução** falhava — inclusive pela importação de documentos. Corrigido com `OnceLock` + `Mutex` e provado contra a `pdfium.dll` vendored, com o teste falhando na ausência da correção (AD-057). Suíte: **265 / 0 / 17**.
+
+**Defeito 2, achado no item 5 do roteiro (2026-09-07): apertar Ler não abria o livro.** `LibraryPanel` chamava `openBook` e **nunca trocava de tela** — o livro era carregado no `readerStore` e o usuário continuava na Biblioteca, a única tela em que o `ReaderPanel` não está montado. **Omissão da T11**, que roteou a view e não voltou ao chamador da Biblioteca (o comentário lá dizia "a rota é T11" e ficou órfão). A lateral navegava; a Biblioteca, não. Corrigido movendo a troca de view para dentro de `readerStore.openBook`, **antes do `await`** (AD-059). `npm run build` exit 0.
+
+**Defeito 3, achado por leitura de código (2026-09-07): `process_book` nunca escrevia `reading_language`.** O usuário mandava traduzir para `pt`, esperava ~63 min (número da T1), apertava **Ler** — e o leitor abria em `original/`, em inglês, **sem erro nenhum**. O único escritor da coluna era `set_book_reading_language`, alcançável só pelo comando `set_reading_language`; `libraryStore.processBook` também não o chamava. Pela lateral dava no mesmo (`readerStore` resolve o idioma por `.find(l => l.reading)`, calculado contra a mesma coluna NULL) e no painel de edição a retradução seletiva (READ-26) ficava inalcançável com `readingLanguage === null`. É **READ-06, critério 4** — "WHEN o processamento termina THEN o sistema SHALL registrar no livro qual idioma foi escolhido" — que nunca acontecia. **Nenhum gate pegava:** escrita ausente não é tipo errado, e `cargo test`, `cargo check` e `npm run build` passavam os três.
+
+Corrigido em `src-tauri/src/reader_commands.rs`: `process_into_pages` ganhou o parâmetro `language: Option<&str>` e chama `set_book_reading_language` — a função que já existia, e não um segundo `UPDATE` — logo após gravar `page_count` e **antes** do evento `ready`. Duas decisões, ambas justificadas em comentário no código:
+
+- **grava cedo, no fim da paginação, e não no fim da tradução.** A tradução pode ser cancelada no meio (READ-14) e as páginas já escritas ficam no disco; gravar no fim deixaria um livro com 40 de 300 páginas em `pt` abrindo inteiro em inglês. Gravar cedo não deixa o leitor em branco porque `get_book_page` já cai para `original/` **por página** e diz isso no campo `language`;
+- **`language: None` grava NULL.** `wipe_languages` apaga **todas** as pastas de idioma ao reprocessar, então um livro reprocessado sem tradução não pode continuar apontando para uma pasta que a mesma execução acabou de remover.
+
+`original` continua sendo gravado como NULL, porque quem grava é `set_book_reading_language` — uma representação só para "o texto extraído", a decisão da T14 preservada.
+
+**Teste que falha sem o conserto:** `reader_commands::tests::processing_records_the_chosen_language_on_the_book`. Verificado nos dois sentidos: com o conserto revertido ele falha em `left: None / right: Some("pt")`; com o conserto, passa. Suíte: **266 / 0 / 17** (era 265 / 0 / 17), `cargo check --lib` limpo depois de `touch`. ⚠️ O que o teste exercita é `process_into_pages` contra banco em memória + pasta temporária — **a tradução em si não roda** (precisa do sidecar) e **ninguém viu o livro abrir traduzido na tela**: isso continua sendo o item 7 do roteiro abaixo.
+
+**Os itens do roteiro continuam abertos** — o app não foi reaberto depois das correções.
+
 
 **Depends on:** T12
 **Files:** nenhum (a menos que apareça defeito — e aí o conserto é **desta** task, não de uma nova)

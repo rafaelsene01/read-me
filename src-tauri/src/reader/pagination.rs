@@ -1,4 +1,4 @@
-// SPEC: book-reader (READ-10)
+// SPEC: book-reader (READ-10), book-illustrations (ILLUS-12)
 
 //! Turning an extracted book into pages, deterministically.
 //!
@@ -7,6 +7,8 @@
 //! is invented and none is lost. That is why a page can end with the blank
 //! line that separated it from the next paragraph — the display side trims,
 //! the storage side does not have to guess what was dropped.
+
+use super::illustrations::{IMAGE_BUDGET_CHARS, MARKER_PREFIX};
 
 /// Characters per page. Measured in T1: the real page used to time the
 /// translation had 2.161 characters in 3 paragraphs, and ~2.500 is the
@@ -71,16 +73,30 @@ pub fn paginate(text: &str) -> Vec<String> {
     pages
 }
 
-/// Byte offset of the character `PAGE_BUDGET_CHARS` positions after `start`,
-/// or the end of the text. Going through `char_indices` means the cut is on a
-/// character boundary by construction, and that the budget counts characters
-/// and not bytes — "ação" is 4 characters of page, not 6.
+/// Byte offset where the page budget runs out after `start`, or the end of the
+/// text. Walking `char_indices` means the cut is on a character boundary by
+/// construction, and that the budget counts characters and not bytes — "ação"
+/// is 4 characters of page, not 6.
+///
+/// An image marker is charged [`IMAGE_BUDGET_CHARS`] on top of its own
+/// characters (ILLUS-12): its 19 characters buy a picture, and a page that
+/// counted only the text would stack five illustrations believing it had spent
+/// nothing. Only the prefix is looked for here, not the whole marker — this
+/// runs once per character, and over-charging a paragraph of prose that quotes
+/// `[[image: ` costs one page break, while parsing at every offset costs the
+/// pagination of every book.
 fn budget_end(text: &str, start: usize) -> usize {
-    text[start..]
-        .char_indices()
-        .nth(PAGE_BUDGET_CHARS)
-        .map(|(i, _)| start + i)
-        .unwrap_or(text.len())
+    let mut spent = 0;
+    for (i, _) in text[start..].char_indices() {
+        if spent >= PAGE_BUDGET_CHARS {
+            return start + i;
+        }
+        if text[start + i..].starts_with(MARKER_PREFIX) {
+            spent += IMAGE_BUDGET_CHARS;
+        }
+        spent += 1;
+    }
+    text.len()
 }
 
 /// The largest boundary in `start < b <= limit`. The list is built in
@@ -283,6 +299,37 @@ mod tests {
             text,
             "a concatenação das páginas não devolveu o texto de entrada"
         );
+    }
+
+    #[test]
+    fn a_page_does_not_stack_illustrations_because_the_marker_costs_what_it_shows() {
+        // ILLUS-12. Dez marcadores e nada mais: sem cobrança, os 190
+        // caracteres caberiam todos numa página só e o leitor receberia dez
+        // gravuras empilhadas.
+        let markers: Vec<String> = (1..=10)
+            .map(|i| super::super::illustrations::marker_for(&format!("{i:04}.png")))
+            .collect();
+        let text = markers.join("
+
+");
+        assert!(text.chars().count() < PAGE_BUDGET_CHARS, "o fixture cabe numa página por tamanho");
+
+        let pages = paginate(&text);
+
+        assert!(
+            pages.len() > 1,
+            "as {} gravuras foram para uma página só", markers.len()
+        );
+        let per_page = PAGE_BUDGET_CHARS / IMAGE_BUDGET_CHARS;
+        for page in &pages {
+            assert!(
+                split_paragraphs(page).len() <= per_page + 1,
+                "uma página juntou gravuras demais: {:?}",
+                split_paragraphs(page)
+            );
+        }
+        // A invariante da READ-10 continua valendo com marcador no meio.
+        assert_eq!(pages.concat(), text);
     }
 
     #[test]

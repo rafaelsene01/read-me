@@ -1,4 +1,5 @@
-// SPEC: book-reader (READ-12, READ-14, READ-20, READ-21, READ-22, READ-23, READ-30)
+// SPEC: book-reader (READ-12, READ-14, READ-20, READ-21, READ-22, READ-23, READ-30),
+//       book-illustrations (ILLUS-05), epub-fidelity (FID-06, FID-07, FID-08)
 
 //! Translating a book, one paragraph per request and one page per checkpoint.
 //!
@@ -12,7 +13,7 @@
 //! against a temp folder with no Tauri at all - which is the only way the
 //! resume and reassembly rules get a test in this project.
 
-use super::{pagination, storage};
+use super::{html, illustrations, pagination, storage};
 use crate::chat::cancellation::CancellationToken;
 use crate::providers::llama_server::LlamaServerClient;
 use crate::providers::ChatMessage;
@@ -123,18 +124,73 @@ where
             break;
         };
 
-        let text = storage::read_page(&original, page).map_err(|e| e.to_string())?;
-        let Some(translated) = translate_page(&text, cancelled, &mut translate).await? else {
+        let (source, format) = storage::existing_page(&original, page)
+            .ok_or_else(|| format!("a página {page} não existe em original/"))?;
+        let text = std::fs::read_to_string(&source).map_err(|e| e.to_string())?;
+        // The translation is written in the format the original has: an EPUB
+        // read faithfully stays HTML, a PDF stays text (FID-09).
+        let translated = if format == "html" {
+            translate_blocks(&text, cancelled, &mut translate).await?
+        } else {
+            translate_page(&text, cancelled, &mut translate).await?
+        };
+        let Some(translated) = translated else {
             // Cancelled between paragraphs: nothing is written, so "the file
             // exists" keeps meaning "the page is complete".
             break;
         };
 
         std::fs::create_dir_all(&lang).map_err(|e| e.to_string())?;
-        std::fs::write(storage::page_file(&lang, page), translated).map_err(|e| e.to_string())?;
+        std::fs::write(
+            storage::page_file_ext(&lang, page, format),
+            translated,
+        )
+        .map_err(|e| e.to_string())?;
         written += 1;
     }
     Ok(written)
+}
+
+/// One page of **markup**: one request per block, with the block's inline tags
+/// replaced by placeholders so the model translates the whole sentence and
+/// never sees a tag to close (FID-06). `Ok(None)` means cancelled mid-page.
+///
+/// A block with no visible text - a figure, a rule - is copied and costs no
+/// request at all (FID-08). An empty answer no longer fails the page here: a
+/// block whose translation comes back blank keeps its original markup, because
+/// unlike a paragraph of prose a block can legitimately be almost nothing.
+async fn translate_blocks<T, Fut>(
+    page: &str,
+    cancelled: &CancellationToken,
+    translate: &mut T,
+) -> Result<Option<String>, String>
+where
+    T: FnMut(String) -> Fut,
+    Fut: std::future::Future<Output = Result<String, String>>,
+{
+    let mut out: Vec<String> = Vec::new();
+    for block in html::split_blocks(page) {
+        if cancelled.is_cancelled() {
+            return Ok(None);
+        }
+        // The visible text decides, not the placeholder string: a block that
+        // is only a figure comes back as `⟦1⟧⟦/1⟧`, which is not empty and
+        // would have cost a request for a picture (FID-08).
+        if html::visible_text(&block).trim().is_empty() {
+            out.push(block);
+            continue;
+        }
+        let held = html::placehold(&block);
+        let translated = translate(held.text.clone()).await?;
+        if translated.trim().is_empty() {
+            return Err(format!(
+                "o modelo devolveu um bloco vazio; a página não foi gravada: {:?}",
+                held.text.chars().take(60).collect::<String>()
+            ));
+        }
+        out.push(html::rebuild(&held, translated.trim()));
+    }
+    Ok(Some(out.join("\n\n")))
 }
 
 /// One page: split, one request per paragraph, joined back with the blank line
@@ -161,6 +217,14 @@ where
         // the user would otherwise wait for every remaining request.
         if cancelled.is_cancelled() {
             return Ok(None);
+        }
+        // An illustration marker is copied, never sent (ILLUS-05). Handing
+        // `[[image: 0007.png]]` to a 7B model is inviting it to translate a
+        // file name, and the picture would be lost in every language but the
+        // original. It also saves one request per illustration.
+        if illustrations::marker_name(paragraph).is_some() {
+            out.push(paragraph.to_string());
+            continue;
         }
         let translated = translate(paragraph.to_string()).await?;
         if translated.trim().is_empty() {
@@ -393,6 +457,110 @@ mod tests {
             gpu_layers: None,
         };
         assert_eq!(select_model(Some(active)).unwrap().name, "outro.gguf");
+    }
+
+    #[tokio::test]
+    async fn a_markup_page_is_translated_block_by_block_with_the_tags_restored() {
+        // FID-06 e FID-08 na mesma página: a frase inteira vai num pedido só,
+        // com o `<em>` como marcador, e o bloco que é só figura não vira
+        // requisição nenhuma.
+        let dir = book("blocks");
+        let original = storage::lang_dir(&dir, storage::ORIGINAL_DIR).unwrap();
+        let page = concat!(
+            "<p>Fã de suspense, descobriu <em>O Código</em> antes.</p>\n\n",
+            "<div class=\"fig\"><img src=\"0001.png\"/></div>\n\n",
+            "<p>Segundo bloco.</p>"
+        );
+        storage::write_pages_ext(&original, &[page.to_string()], "html").unwrap();
+
+        let seen = Rc::new(RefCell::new(Vec::new()));
+        let log = seen.clone();
+        let mut translator = move |text: String| {
+            log.borrow_mut().push(text.clone());
+            // O duble devolve o texto com os marcadores intactos, que é
+            // exatamente o que se exige do modelo.
+            std::future::ready(Ok(format!("[pt] {text}")))
+        };
+
+        translate_book(
+            &dir,
+            Some("pt"),
+            1,
+            &CancellationToken::default(),
+            &mut translator,
+            always_alive,
+        )
+        .await
+        .unwrap();
+
+        let seen = seen.borrow();
+        assert_eq!(
+            seen.as_slice(),
+            [
+                "Fã de suspense, descobriu ⟦1⟧O Código⟦/1⟧ antes.",
+                "Segundo bloco."
+            ],
+            "a figura virou requisição, ou a frase foi partida"
+        );
+        for request in seen.iter() {
+            assert!(!request.contains('<'), "a requisição levou marcação: {request:?}");
+        }
+
+        let pt = storage::lang_dir(&dir, "pt").unwrap();
+        assert_eq!(storage::existing_page(&pt, 1).unwrap().1, "html");
+        let translated = storage::read_page(&pt, 1).unwrap();
+        assert_eq!(
+            translated,
+            concat!(
+                "<p>[pt] Fã de suspense, descobriu <em>O Código</em> antes.</p>\n\n",
+                "<div class=\"fig\"><img src=\"0001.png\"/></div>\n\n",
+                "<p>[pt] Segundo bloco.</p>"
+            )
+        );
+    }
+
+    #[tokio::test]
+    async fn an_image_marker_is_copied_and_never_reaches_the_model() {
+        // ILLUS-05, as duas metades numa asserção só: o duble registra tudo
+        // que recebeu, então "o modelo nunca viu o marcador" é afirmável, e a
+        // página remontada mostra que ele voltou byte a byte igual.
+        let dir = book("illustration-marker");
+        let original = storage::lang_dir(&dir, storage::ORIGINAL_DIR).unwrap();
+        let marker = illustrations::marker_for("0003.png");
+        let page = format!("Primeiro parágrafo.\n\n{marker}\n\nSegundo parágrafo.");
+        storage::write_pages(&original, &[page]).unwrap();
+
+        let (seen, mut translator) = recorder();
+        translate_book(
+            &dir,
+            Some("pt"),
+            1,
+            &CancellationToken::default(),
+            &mut translator,
+            always_alive,
+        )
+        .await
+        .unwrap();
+
+        let seen = seen.borrow();
+        assert_eq!(
+            seen.as_slice(),
+            ["Primeiro parágrafo.", "Segundo parágrafo."],
+            "o marcador virou requisição"
+        );
+        for request in seen.iter() {
+            assert!(
+                !request.contains("[[image:"),
+                "uma requisição levou o marcador: {request:?}"
+            );
+        }
+
+        let translated =
+            storage::read_page(&storage::lang_dir(&dir, "pt").unwrap(), 1).unwrap();
+        assert_eq!(
+            translated,
+            format!("[pt] Primeiro parágrafo.\n\n{marker}\n\n[pt] Segundo parágrafo.")
+        );
     }
 
     #[tokio::test]

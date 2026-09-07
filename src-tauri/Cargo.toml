@@ -50,6 +50,12 @@ lancedb = "0.31"
 arrow-array = "58"
 arrow-schema = "58"
 pdfium-render = "0.9.3"
+# Already in the tree as `pdfium-render`'s own dependency (feature `image_latest`
+# -> `image_025`), so declaring it adds no binary. It is declared because
+# `get_raw_image` hands back a `DynamicImage` and something has to encode it as
+# a PNG; depending on someone else's dependency implicitly breaks on their next
+# bump.
+image = "0.25"
 docx-rs = "0.4"
 # Update (M8). Verifies the minisign signature of the portable bundle against the
 # same public key tauri-plugin-updater uses for the installers, so both update

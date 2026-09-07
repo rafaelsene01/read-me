@@ -122,7 +122,12 @@
     "pageOf": "Page {{page}} of {{count}}",
     "showingOriginal": "This page has no {{language}} translation yet — showing the original.",
     "history": "Reading",
-    "historyEmpty": "No book opened yet. Import one in the Library."
+    "historyEmpty": "No book opened yet. Import one in the Library.",
+    "historyRemove": "Remove from history",
+    "historyRemoveConfirm": "Remove {{name}} from the history? The reading position is lost and the book starts from the first page again. The file and its translations stay in the Library.",
+    "illustration": "Illustration",
+    "imageMissing": "Illustration unavailable",
+    "bookPage": "Book page"
   },
   "runtime": {
     "title": "Runtime",

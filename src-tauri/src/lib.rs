@@ -4,7 +4,8 @@
 //       LIB-09, LIB-10, LIB-11, LIB-12),
 //       book-reader (READ-02, READ-09, READ-11, READ-13, READ-16, READ-17, READ-26,
 //       READ-27, READ-28, READ-29, READ-30, READ-32),
-//       reading-history (HIST-02, HIST-04, HIST-05, HIST-06, HIST-07)
+//       reading-history (HIST-02, HIST-04, HIST-05, HIST-06, HIST-07, HIST-09),
+//       book-illustrations (ILLUS-07)
 
 mod chat;
 mod chat_commands;
@@ -177,6 +178,8 @@ pub fn run() {
             reader_commands::save_reading_position,
             reader_commands::get_book_page,
             reader_commands::list_reading_history,
+            reader_commands::forget_reading_entry,
+            reader_commands::get_book_image,
             reader_commands::retranslate_pages,
             reader_commands::add_language,
             reader_commands::remove_language,

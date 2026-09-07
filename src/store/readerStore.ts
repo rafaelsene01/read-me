@@ -1,8 +1,10 @@
-// SPEC: book-reader (READ-12, READ-16, READ-17), reading-history (HIST-05, HIST-06)
+// SPEC: book-reader (READ-12, READ-16, READ-17), reading-history (HIST-05, HIST-06, HIST-09),
+//       epub-fidelity (FID-02)
 
 import { create } from "zustand";
 import { listen } from "@tauri-apps/api/event";
 import { readerApi } from "../lib/readerApi";
+import { useUiStore } from "./uiStore";
 import type { BookStatusEvent } from "../types";
 
 /** Turning five pages fast must cost one write, not five (READ-17). */
@@ -19,15 +21,19 @@ interface ReaderState {
    *  `language` while that page's translation has not been written yet
    *  (READ-12), and the screen is what says so. */
   pageLanguage: string;
+  /** `"html"` = `text` is a whole document for the reader's iframe (FID-02). */
+  pageFormat: string;
   /** The language being read; null = `original/`. */
   language: string | null;
   isLoading: boolean;
   error: string | null;
 
-  openBook: (bookId: string, language: string | null) => Promise<void>;
+  /** `language` omitted = resolve it from disk; `null` = read the original. */
+  openBook: (bookId: string, language?: string | null) => Promise<void>;
   goToPage: (page: number) => Promise<void>;
   setLanguage: (language: string | null) => Promise<void>;
-  closeBook: () => void;
+  /** `save: false` drops the position instead of flushing it (HIST-09). */
+  closeBook: (save?: boolean) => void;
 }
 
 export const useReaderStore = create<ReaderState>((set, get) => ({
@@ -36,22 +42,45 @@ export const useReaderStore = create<ReaderState>((set, get) => ({
   pageCount: 0,
   text: "",
   pageLanguage: "original",
+  pageFormat: "txt",
   language: null,
   isLoading: false,
   error: null,
 
   openBook: async (bookId, language) => {
-    set({ isLoading: true, error: null, bookId, language, text: "" });
+    // The route switch lives here, not in the callers: opening a book always
+    // means going to the reader, and a caller that forgot it shipped a dead
+    // button - the Library loaded the book into this store and left the user
+    // staring at the Library, because that is the one screen the ReaderPanel is
+    // not mounted on.
+    //
+    // Before the await, on purpose: the click has to paint now. The reader owns
+    // the wait from here - it renders its header, disables the arrows while
+    // `isLoading`, and shows `error` if the page never arrives.
+    useUiStore.getState().setActiveView("reader");
+    set({ isLoading: true, error: null, bookId, language: language ?? null, text: "" });
     try {
+      // Omitted means the caller does not know the reading language: the
+      // sidebar's history row has no such column, and `get_book_page` with
+      // `null` reads `original/` - it does not consult the book's
+      // `reading_language` (T8 decision 3). Resolving it HERE, after the view
+      // switch above, is what keeps the click instant: doing it in the caller
+      // put an invoke in front of the navigation.
+      const resolved =
+        language === undefined
+          ? ((await readerApi.listBookLanguages(bookId)).find((l) => l.reading)?.language ?? null)
+          : language;
       // The backend owns the clamp and records the opening instant (HIST-04),
       // so the position is asked for, never guessed from the row.
       const page = await readerApi.openBook(bookId);
-      const p = await readerApi.getBookPage(bookId, page, language);
+      const p = await readerApi.getBookPage(bookId, page, resolved);
       set({
+        language: resolved,
         page: p.page,
         pageCount: p.page_count,
         text: p.text,
         pageLanguage: p.language,
+        pageFormat: p.format,
         isLoading: false,
       });
     } catch (err) {
@@ -70,6 +99,7 @@ export const useReaderStore = create<ReaderState>((set, get) => ({
         pageCount: p.page_count,
         text: p.text,
         pageLanguage: p.language,
+        pageFormat: p.format,
         isLoading: false,
       });
       window.clearTimeout(saveTimer);
@@ -98,18 +128,21 @@ export const useReaderStore = create<ReaderState>((set, get) => ({
     }
   },
 
-  closeBook: () => {
+  closeBook: (save = true) => {
     const { bookId, page } = get();
     window.clearTimeout(saveTimer);
     // The debounce still pending is exactly the last page turn, the one worth
-    // keeping — so closing flushes it instead of cancelling it.
-    if (bookId) void readerApi.saveReadingPosition(bookId, page).catch(() => {});
+    // keeping — so closing flushes it instead of cancelling it. The exception
+    // is deleting the open book from the history (HIST-09): flushing there
+    // would write back the position the deletion just cleared.
+    if (save && bookId) void readerApi.saveReadingPosition(bookId, page).catch(() => {});
     set({
       bookId: null,
       page: 0,
       pageCount: 0,
       text: "",
       pageLanguage: "original",
+      pageFormat: "txt",
       language: null,
       error: null,
     });

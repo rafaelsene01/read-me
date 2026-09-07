@@ -189,11 +189,15 @@ export interface BookStatusEvent {
  *  for: the original is served, and named, while that page's translation is
  *  still missing (READ-12). */
 export interface BookPage {
-  /** Zero-based. The `{:04}.txt` files are base 1 and only Rust knows it. */
+  /** Zero-based. The `{:04}.<ext>` files are base 1 and only Rust knows it. */
   page: number;
   page_count: number;
   language: string;
+  /** A whole HTML document when `format` is `"html"`, plain text otherwise. */
   text: string;
+  /** `"html"` for an EPUB read faithfully, `"txt"` for a PDF and for books
+   *  processed before the fidelity feature (FID-02, FID-09). */
+  format: string;
 }
 
 /** Mirrors `ReadingEntry` in reader_commands.rs — one line of the reading

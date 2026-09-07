@@ -1,4 +1,6 @@
-// SPEC: book-reader (READ-18, READ-28, READ-29, READ-31)
+// SPEC: book-reader (READ-18, READ-28, READ-29, READ-31),
+//       book-illustrations (ILLUS-03, ILLUS-07, ILLUS-09, ILLUS-10),
+//       epub-fidelity (FID-09, FID-10, FID-11)
 
 //! The on-disk layout of a book, and the **only** place in the code that
 //! builds a page path.
@@ -19,6 +21,7 @@
 //! a temp folder with no `AppHandle` — which is what the `book-library`
 //! feature could not do, leaving LIB-04/LIB-11 without proof.
 
+use super::illustrations::{is_image_name, Illustration};
 use std::collections::BTreeSet;
 use std::io;
 use std::path::{Component, Path, PathBuf};
@@ -27,6 +30,63 @@ use std::path::{Component, Path, PathBuf};
 /// like any other, so it goes through `lang_dir`: `original` and `pt` differ
 /// only in who writes them.
 pub const ORIGINAL_DIR: &str = "original";
+
+/// The illustrations of a book, **one folder shared by every language**
+/// (ILLUS-03): a picture does not change when the text is translated, so a
+/// copy per language would multiply the disk for nothing.
+///
+/// It is a sibling of the language folders, which is why the two places that
+/// sweep subfolders - `wipe_languages` and `book_languages` in
+/// `reader_commands` - have to skip it by name. Without that it would show up
+/// on screen as a language called "images" and vanish on the first reprocess.
+pub const IMAGES_DIR: &str = "images";
+
+/// `<book_dir>/images`.
+pub fn images_dir(book_dir: &Path) -> io::Result<PathBuf> {
+    child(book_dir, IMAGES_DIR)
+}
+
+/// Replaces the whole content of `<book_dir>/images` with `images`.
+///
+/// Clearing first is the same rule `write_pages` follows: a reprocess with
+/// fewer pictures must not leave the previous run's behind, pointed at by
+/// nothing (ILLUS-09).
+///
+/// An empty list leaves **no folder at all**, so a book without illustrations
+/// looks on disk exactly as it did before this feature (ILLUS-11).
+pub fn write_images(book_dir: &Path, images: &[Illustration]) -> io::Result<()> {
+    let dir = images_dir(book_dir)?;
+    remove_dir_if_present(&dir)?;
+    if images.is_empty() {
+        return Ok(());
+    }
+    std::fs::create_dir_all(&dir)?;
+    for image in images {
+        std::fs::write(image_file(&dir, &image.name)?, &image.bytes)?;
+    }
+    Ok(())
+}
+
+/// The bytes of one illustration, by the name a marker carries.
+pub fn read_image(book_dir: &Path, name: &str) -> io::Result<Vec<u8>> {
+    std::fs::read(image_file(&images_dir(book_dir)?, name)?)
+}
+
+/// `<images_dir>/NNNN.<ext>`, and the **only** place a picture name becomes a
+/// path.
+///
+/// The name arrives from the frontend on the read side, so it is checked
+/// against the exact shape this crate produces (ILLUS-07). `child` alone would
+/// stop `../`, but not a name shaped like nothing this code ever wrote.
+fn image_file(images_dir: &Path, name: &str) -> io::Result<PathBuf> {
+    if !is_image_name(name) {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!("not an illustration name: {name:?}"),
+        ));
+    }
+    child(images_dir, name)
+}
 
 /// A folder or language name has to be one ordinary path component.
 ///
@@ -57,6 +117,60 @@ pub fn lang_dir(book_dir: &Path, language: &str) -> io::Result<PathBuf> {
     child(book_dir, language)
 }
 
+/// The extensions a page file can have, **most faithful first**.
+///
+/// `html` is what an EPUB produces now (FID-01); `txt` is what a PDF still
+/// produces and what every book processed before this feature has on disk. The
+/// order is the fallback rule of FID-09 in one line: a book already processed
+/// and **translated** stays readable, and reprocessing promotes it.
+pub const PAGE_EXTENSIONS: [&str; 2] = ["html", "txt"];
+
+/// The book's stylesheet, next to `images/` and shared by every language for
+/// the same reason (FID-10): translating does not change the typography.
+pub const STYLES_DIR: &str = "styles";
+
+/// Neither of these is a language, and the two functions in `reader_commands`
+/// that sweep the book's subfolders have to know it by name (FID-11).
+pub fn is_reserved_dir(name: &str) -> bool {
+    name == IMAGES_DIR || name == STYLES_DIR
+}
+
+pub fn styles_file(book_dir: &Path) -> io::Result<PathBuf> {
+    Ok(child(book_dir, STYLES_DIR)?.join("book.css"))
+}
+
+/// Writes the book's CSS, or removes it when the book has none - so a book
+/// with no stylesheet leaves no folder behind, like `write_images`.
+pub fn write_css(book_dir: &Path, css: &str) -> io::Result<()> {
+    let file = styles_file(book_dir)?;
+    if css.trim().is_empty() {
+        return remove_dir_if_present(&child(book_dir, STYLES_DIR)?);
+    }
+    std::fs::create_dir_all(file.parent().expect("styles_file always has a parent"))?;
+    std::fs::write(file, css)
+}
+
+pub fn read_css(book_dir: &Path) -> String {
+    styles_file(book_dir)
+        .ok()
+        .and_then(|f| std::fs::read_to_string(f).ok())
+        .unwrap_or_default()
+}
+
+/// `<dir>/NNNN.<ext>`, base 1.
+pub fn page_file_ext(dir: &Path, page: u32, extension: &str) -> PathBuf {
+    dir.join(format!("{page:04}.{extension}"))
+}
+
+/// The page file that exists, and the extension it has. `None` when the page
+/// was never written for this language.
+pub fn existing_page(dir: &Path, page: u32) -> Option<(PathBuf, &'static str)> {
+    PAGE_EXTENSIONS.iter().find_map(|extension| {
+        let path = page_file_ext(dir, page, extension);
+        path.exists().then_some((path, *extension))
+    })
+}
+
 /// `<dir>/NNNN.txt`, base 1.
 ///
 /// Zero-padded to four digits so the explorer's alphabetical order *is*
@@ -64,6 +178,21 @@ pub fn lang_dir(book_dir: &Path, language: &str) -> io::Result<PathBuf> {
 /// screen, and the folder is his (READ-31).
 pub fn page_file(dir: &Path, page: u32) -> PathBuf {
     dir.join(format!("{page:04}.txt"))
+}
+
+/// The same, with the extension chosen by the caller: `html` for an EPUB read
+/// faithfully, `txt` for a PDF and for the old format (FID-01, FID-12).
+pub fn write_pages_ext(dir: &Path, pages: &[String], extension: &str) -> io::Result<()> {
+    match std::fs::remove_dir_all(dir) {
+        Ok(()) => {}
+        Err(e) if e.kind() == io::ErrorKind::NotFound => {}
+        Err(e) => return Err(e),
+    }
+    std::fs::create_dir_all(dir)?;
+    for (i, page) in pages.iter().enumerate() {
+        std::fs::write(page_file_ext(dir, i as u32 + 1, extension), page.trim_end())?;
+    }
+    Ok(())
 }
 
 /// Replaces the whole content of `dir` with `pages`, page 1 first.
@@ -82,22 +211,15 @@ pub fn page_file(dir: &Path, page: u32) -> PathBuf {
 /// back and concatenating no longer reproduces the extracted text byte for
 /// byte.
 pub fn write_pages(dir: &Path, pages: &[String]) -> io::Result<()> {
-    match std::fs::remove_dir_all(dir) {
-        Ok(()) => {}
-        // Not an error: the first processing has no folder yet. Any other
-        // failure has to surface, or stale pages would survive the clear.
-        Err(e) if e.kind() == io::ErrorKind::NotFound => {}
-        Err(e) => return Err(e),
-    }
-    std::fs::create_dir_all(dir)?;
-    for (i, page) in pages.iter().enumerate() {
-        std::fs::write(page_file(dir, i as u32 + 1), page.trim_end())?;
-    }
-    Ok(())
+    write_pages_ext(dir, pages, "txt")
 }
 
+/// The page as it is on disk, whichever format it was written in (FID-09).
 pub fn read_page(dir: &Path, page: u32) -> io::Result<String> {
-    std::fs::read_to_string(page_file(dir, page))
+    let (path, _) = existing_page(dir, page).ok_or_else(|| {
+        io::Error::new(io::ErrorKind::NotFound, format!("no page {page} in {dir:?}"))
+    })?;
+    std::fs::read_to_string(path)
 }
 
 /// The pages present in `dir`, ascending. A folder that does not exist yet is
@@ -114,8 +236,12 @@ pub fn translated_pages(dir: &Path) -> BTreeSet<u32> {
         .flatten()
         .filter_map(|entry| {
             let name = entry.file_name().to_string_lossy().into_owned();
-            let page: u32 = name.strip_suffix(".txt")?.parse().ok()?;
-            (format!("{page:04}.txt") == name).then_some(page)
+            // Either format counts as "this page is done" (FID-09): a book
+            // half translated before the change must not look half missing.
+            PAGE_EXTENSIONS.iter().find_map(|extension| {
+                let page: u32 = name.strip_suffix(&format!(".{extension}"))?.parse().ok()?;
+                (format!("{page:04}.{extension}") == name).then_some(page)
+            })
         })
         .collect()
 }
@@ -364,6 +490,128 @@ mod tests {
             ),
             raw.concat()
         );
+    }
+
+    fn illustration(name: &str, bytes: &[u8]) -> Illustration {
+        Illustration {
+            name: name.to_string(),
+            bytes: bytes.to_vec(),
+        }
+    }
+
+    #[test]
+    fn an_html_page_is_preferred_over_a_txt_one_and_both_count_as_done() {
+        // FID-09. Um livro já processado no formato antigo continua legível, e
+        // reprocessar promove: os dois arquivos podem coexistir por um
+        // instante, e o mais fiel é o que ganha.
+        let lib = library("page-formats");
+        let dir = lang_dir(&book_dir(&lib, "livro").unwrap(), ORIGINAL_DIR).unwrap();
+        write_pages_ext(&dir, &["<p>novo</p>".to_string()], "html").unwrap();
+        std::fs::write(page_file_ext(&dir, 1, "txt"), "antigo").unwrap();
+
+        assert_eq!(read_page(&dir, 1).unwrap(), "<p>novo</p>");
+        assert_eq!(existing_page(&dir, 1).unwrap().1, "html");
+        assert_eq!(translated_pages(&dir), (1..=1).collect::<BTreeSet<u32>>());
+
+        // Só o `.txt`: continua sendo uma página completa, não uma lacuna.
+        let old = lang_dir(&book_dir(&lib, "livro").unwrap(), "pt").unwrap();
+        write_pages(&old, &["antigo".to_string()]).unwrap();
+        assert_eq!(read_page(&old, 1).unwrap(), "antigo");
+        assert_eq!(existing_page(&old, 1).unwrap().1, "txt");
+        assert_eq!(next_missing(&old, 1), None);
+        assert!(read_page(&old, 2).is_err());
+    }
+
+    #[test]
+    fn the_stylesheet_lives_beside_the_images_and_neither_is_a_language() {
+        // FID-10/FID-11.
+        let lib = library("styles");
+        let book = book_dir(&lib, "livro").unwrap();
+        write_pages_ext(&lang_dir(&book, ORIGINAL_DIR).unwrap(), &["<p>a</p>".to_string()], "html")
+            .unwrap();
+        write_images(&book, &[illustration("0001.png", b"um")]).unwrap();
+        write_css(&book, "p { text-align: justify; }").unwrap();
+
+        assert_eq!(names_in(&book), vec!["images", "original", "styles"]);
+        assert_eq!(read_css(&book), "p { text-align: justify; }");
+        assert!(is_reserved_dir("images") && is_reserved_dir("styles"));
+        assert!(!is_reserved_dir("pt") && !is_reserved_dir(ORIGINAL_DIR));
+
+        // Livro sem CSS não deixa pasta, como acontece com as imagens.
+        write_css(&book, "   ").unwrap();
+        assert_eq!(names_in(&book), vec!["images", "original"]);
+        assert_eq!(read_css(&book), "");
+    }
+
+    #[test]
+    fn one_images_folder_serves_every_language_and_a_reprocess_leaves_no_orphan() {
+        // ILLUS-03 e ILLUS-09. As traduções não copiam gravura nenhuma: elas
+        // apontam para os mesmos arquivos, que é o que esta pasta única
+        // significa em disco.
+        let lib = library("images");
+        let book = book_dir(&lib, "livro").unwrap();
+        write_pages(&lang_dir(&book, ORIGINAL_DIR).unwrap(), &pages(2)).unwrap();
+        write_pages(&lang_dir(&book, "pt").unwrap(), &pages(2)).unwrap();
+        write_images(
+            &book,
+            &[
+                illustration("0001.png", b"um"),
+                illustration("0002.png", b"dois"),
+                illustration("0003.png", b"tres"),
+            ],
+        )
+        .unwrap();
+
+        assert_eq!(names_in(&book), vec!["images", "original", "pt"]);
+        assert_eq!(read_image(&book, "0002.png").unwrap(), b"dois");
+
+        // Reprocessar com menos gravuras: a terceira não pode sobrar.
+        write_images(&book, &[illustration("0001.png", b"novo")]).unwrap();
+
+        assert_eq!(names_in(&images_dir(&book).unwrap()), vec!["0001.png"]);
+        assert_eq!(read_image(&book, "0001.png").unwrap(), b"novo");
+        assert!(read_image(&book, "0003.png").is_err());
+
+        // Um livro sem gravura nenhuma não deixa pasta (ILLUS-11).
+        write_images(&book, &[]).unwrap();
+        assert!(!images_dir(&book).unwrap().exists());
+        assert_eq!(names_in(&book), vec!["original", "pt"]);
+    }
+
+    #[test]
+    fn removing_the_book_takes_the_images_with_it() {
+        // ILLUS-09, segunda metade.
+        let lib = library("images-removed");
+        let book = book_dir(&lib, "livro").unwrap();
+        write_pages(&lang_dir(&book, ORIGINAL_DIR).unwrap(), &pages(1)).unwrap();
+        write_images(&book, &[illustration("0001.png", b"um")]).unwrap();
+
+        remove_book_dir(&lib, "livro").unwrap();
+
+        assert!(!images_dir(&book).unwrap().exists());
+        assert!(!book.exists());
+    }
+
+    #[test]
+    fn an_illustration_name_that_is_not_the_exact_shape_is_refused() {
+        // ILLUS-07. Este nome é o único desta feature que volta do frontend.
+        let lib = library("images-guard");
+        let book = book_dir(&lib, "livro").unwrap();
+        write_images(&book, &[illustration("0001.png", b"um")]).unwrap();
+        std::fs::write(book.join("segredo.txt"), b"nao ler").unwrap();
+
+        for bad in [
+            "../segredo.txt",
+            "..",
+            "",
+            "0001.png/../../segredo.txt",
+            "segredo.txt",
+            "0001.PNG",
+            "1.png",
+        ] {
+            assert!(read_image(&book, bad).is_err(), "leu {bad:?}");
+        }
+        assert_eq!(read_image(&book, "0001.png").unwrap(), b"um");
     }
 
     #[test]

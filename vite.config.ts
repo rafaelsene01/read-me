@@ -16,7 +16,13 @@ export default defineConfig(async () => ({
   server: {
     port: 1420,
     strictPort: true,
-    host: host || false,
+    // Explicit 127.0.0.1, not `false`: with `false` Vite listens on `localhost`,
+    // which on this Node/Windows resolves to `[::1]` ONLY - measured, `netstat`
+    // showed a single `[::1]:1420` listener and a connection to 127.0.0.1:1420
+    // was refused. WebView2 picks a family when it resolves `localhost`, so the
+    // dev window came up blank on the boots where it picked IPv4, with no HTTP
+    // request ever reaching Vite. Keep this in sync with `devUrl`.
+    host: host || "127.0.0.1",
     hmr: host
       ? {
           protocol: "ws",

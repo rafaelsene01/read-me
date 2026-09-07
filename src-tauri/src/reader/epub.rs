@@ -1,5 +1,8 @@
-// SPEC: book-reader (READ-09)
+// SPEC: book-reader (READ-09), book-illustrations (ILLUS-01, ILLUS-08, ILLUS-11),
+//       epub-fidelity (FID-01, FID-03)
 
+use super::html;
+use super::illustrations::{self, Illustration};
 use crate::rag::parsing::ParseError;
 use std::io::Read;
 use std::path::Path;
@@ -20,10 +23,202 @@ const BLOCK_TAGS: [&str; 15] = [
 /// `spine`, and any break along it is an error: falling back to zip order
 /// would silently hand the reader a shuffled book.
 pub fn extract_epub_text(path: &Path) -> Result<String, ParseError> {
+    extract_epub(path).map(|(text, _)| text)
+}
+
+/// The book with its own markup kept (FID-01, FID-03).
+///
+/// This is the difference between an EPUB reader and a text extractor: an EPUB
+/// **is** HTML+CSS, and the app was throwing that away only to try to rebuild
+/// it afterwards. Here the `<body>` of every spine document comes back as a
+/// list of blocks with the tags intact, the book's stylesheets come back as
+/// one string, and every `<img>` is rewritten to the name its file was stored
+/// under.
+///
+/// `<script>` is dropped on the way out. The reader also renders inside a
+/// sandboxed iframe that cannot run it (FID-04) - this is the second lock on
+/// the same door, and it costs one comparison.
+pub fn extract_epub_html(path: &Path) -> Result<EpubHtml, ParseError> {
     let file = std::fs::File::open(path).map_err(|e| ParseError::ReadFailed(e.to_string()))?;
     let mut zip = zip::ZipArchive::new(file).map_err(|e| ParseError::ReadFailed(e.to_string()))?;
+    let (opf_path, manifest, spine) = open_package(&mut zip)?;
+    let base = opf_path.rsplit_once('/').map(|(dir, _)| dir).unwrap_or("");
 
-    let container = read_entry(&mut zip, "META-INF/container.xml")?;
+    let mut blocks: Vec<String> = Vec::new();
+    let mut images: Vec<Illustration> = Vec::new();
+    let mut css = String::new();
+    let mut css_seen: Vec<String> = Vec::new();
+
+    for idref in &spine {
+        let href = href_of(&manifest, idref)?;
+        let chapter = join_path(base, &href);
+        let xhtml = read_entry(&mut zip, &chapter)?;
+        let chapter_dir = chapter.rsplit_once('/').map(|(dir, _)| dir).unwrap_or("");
+
+        // The book's stylesheets, once each: two chapters usually share one,
+        // and concatenating it twice would double a page of CSS per chapter.
+        for link in elements(&xhtml, "link") {
+            let is_css = attr(link, "rel").as_deref() == Some("stylesheet")
+                || attr(link, "type").as_deref() == Some("text/css");
+            let Some(sheet) = attr(link, "href").filter(|_| is_css) else {
+                continue;
+            };
+            let entry = join_path(chapter_dir, &sheet);
+            if css_seen.contains(&entry) {
+                continue;
+            }
+            css_seen.push(entry.clone());
+            if let Ok(text) = read_entry(&mut zip, &entry) {
+                css.push_str(&text);
+                css.push('\n');
+            }
+        }
+        for style in inline_styles(&xhtml) {
+            css.push_str(&style);
+            css.push('\n');
+        }
+
+        for block in html::split_blocks(body_of(&xhtml)) {
+            if block.trim_start().to_ascii_lowercase().starts_with("<script") {
+                continue;
+            }
+            blocks.push(rewrite_images(
+                &block,
+                &mut zip,
+                chapter_dir,
+                &mut images,
+            ));
+        }
+    }
+
+    if blocks.is_empty() {
+        // Not an error the caller has to hide: `reader_commands` falls back to
+        // the text extractor below, so a book this cannot open structurally is
+        // still readable.
+        return Err(ParseError::NoTextFound);
+    }
+    Ok(EpubHtml { blocks, css, images })
+}
+
+/// An EPUB read as markup: the blocks in reading order, the book's CSS, and
+/// the image files the blocks point at.
+pub struct EpubHtml {
+    pub blocks: Vec<String>,
+    pub css: String,
+    pub images: Vec<Illustration>,
+}
+
+/// The inner markup of `<body>`, or the whole document when there is no body
+/// tag - some exporters ship fragments.
+fn body_of(xhtml: &str) -> &str {
+    let lower = xhtml.to_ascii_lowercase();
+    let Some(open) = lower.find("<body") else {
+        return xhtml;
+    };
+    let Some(gt) = xhtml[open..].find('>').map(|i| open + i + 1) else {
+        return xhtml;
+    };
+    let end = lower[gt..].find("</body>").map(|i| gt + i).unwrap_or(xhtml.len());
+    &xhtml[gt..end]
+}
+
+/// The bodies of every `<style>` element, which is where a chapter keeps the
+/// CSS it does not put in a file.
+fn inline_styles(xhtml: &str) -> Vec<String> {
+    let lower = xhtml.to_ascii_lowercase();
+    let mut out = Vec::new();
+    let mut from = 0;
+    while let Some(open) = lower[from..].find("<style").map(|i| from + i) {
+        let Some(gt) = xhtml[open..].find('>').map(|i| open + i + 1) else {
+            break;
+        };
+        let Some(close) = lower[gt..].find("</style>").map(|i| gt + i) else {
+            break;
+        };
+        out.push(xhtml[gt..close].to_string());
+        from = close;
+    }
+    out
+}
+
+/// Rewrites every `src`/`xlink:href` of a block to the name its bytes were
+/// stored under, reading each file from the zip once (FID-03).
+///
+/// An image that cannot be read has its whole `src` left pointing at a name
+/// that was never written - so the reader shows nothing for it and the rest of
+/// the block survives. Losing one picture must never cost the chapter.
+fn rewrite_images<R: Read + std::io::Seek>(
+    block: &str,
+    zip: &mut zip::ZipArchive<R>,
+    chapter_dir: &str,
+    images: &mut Vec<Illustration>,
+) -> String {
+    let mut out = String::with_capacity(block.len());
+    let mut rest = block;
+    while let Some(lt) = rest.find('<') {
+        let Some(gt) = rest[lt..].find('>').map(|i| lt + i + 1) else {
+            break;
+        };
+        let tag = &rest[lt..gt];
+        let lower = tag.to_ascii_lowercase();
+        if !lower.starts_with("<img") && !lower.starts_with("<image") {
+            out.push_str(&rest[..gt]);
+            rest = &rest[gt..];
+            continue;
+        }
+        let source = attr(&tag[1..tag.len() - 1], "src")
+            .or_else(|| attr(&tag[1..tag.len() - 1], "xlink:href"));
+        let replacement = source.as_deref().and_then(|src| {
+            let extension = illustrations::extension_of(src)?;
+            let bytes = read_binary_entry(zip, &join_path(chapter_dir, src))?;
+            let name = illustrations::image_name(images.len() + 1, &extension);
+            images.push(Illustration {
+                name: name.clone(),
+                bytes,
+            });
+            Some(name)
+        });
+        match (source, replacement) {
+            (Some(src), Some(name)) => {
+                out.push_str(&rest[..lt]);
+                out.push_str(&tag.replace(&src, &name));
+            }
+            _ => out.push_str(&rest[..gt]),
+        }
+        rest = &rest[gt..];
+    }
+    out.push_str(rest);
+    out
+}
+
+/// The same walk, keeping the pictures (ILLUS-01).
+///
+/// Every `<img src>` in a spine document becomes a paragraph of its own -
+/// `[[image: NNNN.png]]` - and one entry in the returned list, numbered in
+/// order of appearance across the whole book. An `<img>` whose zip entry is
+/// missing or unreadable is dropped **together with its marker** (ILLUS-08):
+/// a marker naming a file that was never written would show the reader a
+/// broken picture instead of nothing.
+///
+/// A book with no `<img>` at all returns exactly the string this function
+/// returned before the feature existed (ILLUS-11).
+pub fn extract_epub(path: &Path) -> Result<(String, Vec<Illustration>), ParseError> {
+    let file = std::fs::File::open(path).map_err(|e| ParseError::ReadFailed(e.to_string()))?;
+    let mut zip = zip::ZipArchive::new(file).map_err(|e| ParseError::ReadFailed(e.to_string()))?;
+    let (opf_path, manifest, spine) = open_package(&mut zip)?;
+    let base = opf_path.rsplit_once('/').map(|(dir, _)| dir).unwrap_or("");
+    extract_epub_text_inner(&mut zip, base, &manifest, &spine)
+}
+
+/// `META-INF/container.xml` -> the `.opf` -> `manifest` + `spine`.
+///
+/// The order of the zip entries is not the reading order, so any break along
+/// this route is an error: falling back to zip order would silently hand the
+/// reader a shuffled book (READ-09).
+type Package = (String, Vec<(String, String)>, Vec<String>);
+
+fn open_package<R: Read + std::io::Seek>(zip: &mut zip::ZipArchive<R>) -> Result<Package, ParseError> {
+    let container = read_entry(zip, "META-INF/container.xml")?;
     let opf_path = elements(&container, "rootfile")
         .iter()
         .find_map(|tag| attr(tag, "full-path"))
@@ -33,7 +228,7 @@ pub fn extract_epub_text(path: &Path) -> Result<String, ParseError> {
             )
         })?;
 
-    let opf = read_entry(&mut zip, &opf_path)?;
+    let opf = read_entry(zip, &opf_path)?;
     let manifest: Vec<(String, String)> = elements(&opf, "item")
         .iter()
         .filter_map(|tag| Some((attr(tag, "id")?, attr(tag, "href")?)))
@@ -48,22 +243,50 @@ pub fn extract_epub_text(path: &Path) -> Result<String, ParseError> {
                 .to_string(),
         ));
     }
-
     // hrefs in the manifest are relative to the .opf, not to the zip root.
-    let base = opf_path.rsplit_once('/').map(|(dir, _)| dir).unwrap_or("");
+    Ok((opf_path, manifest, spine))
+}
 
+fn href_of(manifest: &[(String, String)], idref: &str) -> Result<String, ParseError> {
+    manifest
+        .iter()
+        .find(|(id, _)| id == idref)
+        .map(|(_, href)| href.clone())
+        .ok_or_else(|| {
+            ParseError::ReadFailed(format!(
+                "EPUB inválido: o spine cita '{idref}', que não está no manifest"
+            ))
+        })
+}
+
+fn extract_epub_text_inner<R: Read + std::io::Seek>(
+    zip: &mut zip::ZipArchive<R>,
+    base: &str,
+    manifest: &[(String, String)],
+    spine: &[String],
+) -> Result<(String, Vec<Illustration>), ParseError> {
     let mut out = String::new();
-    for idref in &spine {
-        let href = manifest
-            .iter()
-            .find(|(id, _)| id == idref)
-            .map(|(_, href)| href.clone())
-            .ok_or_else(|| {
-                ParseError::ReadFailed(format!(
-                    "EPUB inválido: o spine cita '{idref}', que não está no manifest"
-                ))
-            })?;
-        let text = xhtml_to_text(&read_entry(&mut zip, &join_path(base, &href))?);
+    let mut images: Vec<Illustration> = Vec::new();
+    for idref in spine {
+        let href = href_of(manifest, idref)?;
+        let chapter = join_path(base, &href);
+        // `read_entry` hands back an owned String, so the archive is free again
+        // by the time the closure below needs it mutably.
+        let xhtml = read_entry(zip, &chapter)?;
+        // An `<img src>` is relative to the document that holds it, not to the
+        // .opf: a chapter in `Text/` pointing at `../Images/fig.png` is the
+        // ordinary export shape.
+        let chapter_dir = chapter.rsplit_once('/').map(|(dir, _)| dir).unwrap_or("");
+        let text = xhtml_to_text(&xhtml, |src| {
+            let extension = illustrations::extension_of(src)?;
+            let bytes = read_binary_entry(zip, &join_path(chapter_dir, src))?;
+            let name = illustrations::image_name(images.len() + 1, &extension);
+            images.push(Illustration {
+                name: name.clone(),
+                bytes,
+            });
+            Some(illustrations::marker_for(&name))
+        });
         if text.is_empty() {
             continue;
         }
@@ -76,7 +299,23 @@ pub fn extract_epub_text(path: &Path) -> Result<String, ParseError> {
     if out.trim().is_empty() {
         return Err(ParseError::NoTextFound);
     }
-    Ok(out)
+    Ok((out, images))
+}
+
+/// The raw bytes of a zip entry, or `None`.
+///
+/// `None` for every failure on purpose: an `<img>` pointing outside the
+/// archive, at a missing entry, or at something unreadable is a dropped
+/// picture and never an error that costs the user the whole book (ILLUS-08).
+/// The lookup is **by zip entry name**, so a `..` in the href can only miss.
+fn read_binary_entry<R: Read + std::io::Seek>(
+    zip: &mut zip::ZipArchive<R>,
+    name: &str,
+) -> Option<Vec<u8>> {
+    let mut entry = zip.by_name(name).ok()?;
+    let mut buf = Vec::new();
+    entry.read_to_end(&mut buf).ok()?;
+    (!buf.is_empty()).then_some(buf)
 }
 
 fn read_entry<R: Read + std::io::Seek>(
@@ -166,7 +405,7 @@ fn attr(tag: &str, name: &str) -> Option<String> {
 /// Flattens XHTML to text: tags out, entities decoded, one paragraph per block
 /// boundary. No HTML crate — the design's call, to be revisited only if T13
 /// measures a real EPUB that this loses.
-fn xhtml_to_text(xhtml: &str) -> String {
+fn xhtml_to_text(xhtml: &str, mut on_image: impl FnMut(&str) -> Option<String>) -> String {
     let mut raw = String::with_capacity(xhtml.len());
     let mut rest = xhtml;
     while let Some(lt) = rest.find('<') {
@@ -181,7 +420,8 @@ fn xhtml_to_text(xhtml: &str) -> String {
             rest = "";
             break;
         };
-        let name = tag_name(&after[..gt]);
+        let tag_body = &after[..gt];
+        let name = tag_name(tag_body);
         rest = &after[gt + 1..];
         // <head> holds the document title and metadata, <style>/<script> hold
         // CSS and JS — none of it is prose. Measured while writing the tests:
@@ -192,6 +432,20 @@ fn xhtml_to_text(xhtml: &str) -> String {
             rest = find_ci(rest, &close)
                 .and_then(|i| rest[i..].find('>').map(|j| &rest[i + j + 1..]))
                 .unwrap_or("");
+            continue;
+        }
+        // An illustration is a paragraph: the newlines around the marker
+        // are what make it one once the lines below are joined with a blank
+        // line between them (ILLUS-04).
+        if name == "img" || name == "image" {
+            if let Some(marker) = attr(tag_body, "src")
+                .or_else(|| attr(tag_body, "xlink:href"))
+                .and_then(|src| on_image(&src))
+            {
+                raw.push('\n');
+                raw.push_str(&marker);
+                raw.push('\n');
+            }
             continue;
         }
         if BLOCK_TAGS.contains(&name.as_str()) {
@@ -215,7 +469,7 @@ fn find_ci(haystack: &str, lowercase_needle: &str) -> Option<usize> {
     haystack.to_ascii_lowercase().find(lowercase_needle)
 }
 
-fn decode_entities(text: &str) -> String {
+pub(super) fn decode_entities(text: &str) -> String {
     if !text.contains('&') {
         return text.to_string();
     }
@@ -336,6 +590,130 @@ mod tests {
 
     fn chapter(body: &str) -> String {
         format!("<html><head><title>t</title></head><body><p>{body}</p></body></html>")
+    }
+
+    fn chapter_with_image(body: &str, src: &str) -> String {
+        format!(
+            "<html><head><title>t</title></head><body><p>{body}</p><img src=\"{src}\"/></body></html>"
+        )
+    }
+
+    /// Same as `write_epub`, plus binary entries — an image is bytes, and the
+    /// text writer would have to pretend otherwise.
+    fn write_epub_with_bytes(path: &Path, text: &[(&str, &str)], binary: &[(&str, &[u8])]) {
+        let file = std::fs::File::create(path).unwrap();
+        let mut writer = zip::ZipWriter::new(file);
+        let opts = zip::write::SimpleFileOptions::default();
+        for (name, body) in text {
+            writer.start_file::<_, ()>(*name, opts).unwrap();
+            writer.write_all(body.as_bytes()).unwrap();
+        }
+        for (name, body) in binary {
+            writer.start_file::<_, ()>(*name, opts).unwrap();
+            writer.write_all(body).unwrap();
+        }
+        writer.finish().unwrap();
+    }
+
+    #[test]
+    fn images_are_numbered_in_reading_order_across_chapters() {
+        // ILLUS-01. Duas imagens em dois capítulos, e o spine pede o segundo
+        // capítulo primeiro: a numeração tem de seguir a LEITURA, não o zip.
+        let path = temp_dir("illus-order").join("livro.epub");
+        let package = opf(&[("a", "a.xhtml"), ("b", "b.xhtml")], &["b", "a"]);
+        write_epub_with_bytes(
+            &path,
+            &[
+                ("META-INF/container.xml", CONTAINER),
+                ("OEBPS/content.opf", &package),
+                (
+                    "OEBPS/a.xhtml",
+                    &chapter_with_image("texto A", "../Images/fig-a.png"),
+                ),
+                (
+                    "OEBPS/b.xhtml",
+                    &chapter_with_image("texto B", "Images/fig-b.jpg"),
+                ),
+            ],
+            &[
+                ("Images/fig-a.png", b"png-a"),
+                ("OEBPS/Images/fig-b.jpg", b"jpg-b"),
+            ],
+        );
+
+        let (text, images) = extract_epub(&path).unwrap();
+
+        assert_eq!(
+            images.iter().map(|i| i.name.as_str()).collect::<Vec<_>>(),
+            vec!["0001.jpg", "0002.png"],
+            "a numeracao seguiu a ordem do zip em vez da ordem do spine"
+        );
+        assert_eq!(images[0].bytes, b"jpg-b");
+        assert_eq!(images[1].bytes, b"png-a");
+        // Cada marcador e um paragrafo proprio, e nessa ordem.
+        let paragraphs: Vec<&str> = text.split("\n\n").collect();
+        assert_eq!(
+            paragraphs,
+            vec![
+                "texto B",
+                "[[image: 0001.jpg]]",
+                "texto A",
+                "[[image: 0002.png]]"
+            ]
+        );
+    }
+
+    #[test]
+    fn an_image_that_cannot_be_read_takes_its_marker_with_it() {
+        // ILLUS-08. O href aponta para entrada que nao existe. O livro sai
+        // inteiro, sem a gravura E sem um marcador orfao — que na tela seria
+        // uma figura quebrada.
+        let path = temp_dir("illus-missing").join("livro.epub");
+        let package = opf(&[("a", "a.xhtml")], &["a"]);
+        write_epub_with_bytes(
+            &path,
+            &[
+                ("META-INF/container.xml", CONTAINER),
+                ("OEBPS/content.opf", &package),
+                (
+                    "OEBPS/a.xhtml",
+                    &chapter_with_image("texto", "../../fora.png"),
+                ),
+            ],
+            &[],
+        );
+
+        let (text, images) = extract_epub(&path).unwrap();
+
+        assert!(images.is_empty(), "leu uma entrada que nao esta no zip");
+        assert!(
+            !text.contains("[[image:"),
+            "sobrou um marcador apontando para arquivo nenhum: {text:?}"
+        );
+        assert_eq!(text, "texto");
+    }
+
+    #[test]
+    fn a_book_without_images_comes_out_exactly_as_it_did_before() {
+        // ILLUS-11: a garantia de que esta feature nao mexeu em livro nenhum
+        // que nao tenha gravura.
+        let path = temp_dir("illus-none").join("livro.epub");
+        let package = opf(&[("a", "a.xhtml"), ("b", "b.xhtml")], &["a", "b"]);
+        write_epub(
+            &path,
+            &[
+                ("META-INF/container.xml", CONTAINER),
+                ("OEBPS/content.opf", &package),
+                ("OEBPS/a.xhtml", &chapter("primeiro")),
+                ("OEBPS/b.xhtml", &chapter("segundo")),
+            ],
+        );
+
+        let (text, images) = extract_epub(&path).unwrap();
+
+        assert!(images.is_empty());
+        assert_eq!(text, "primeiro\n\nsegundo");
+        assert_eq!(extract_epub_text(&path).unwrap(), text);
     }
 
     #[test]

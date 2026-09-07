@@ -1,7 +1,7 @@
 # Histórico de leitura — Specification
 
 **Milestone:** M10 — Pivô para leitor
-**Status:** requisitos escritos (2026-09-04). **Bloqueador levantado em 2026-09-05** — a âncora de posição foi decidida em `.specs/features/book-reader/`, e é de lá que vêm as tasks. **Backend em pé desde 2026-09-06** (T7 da `book-reader`): as colunas, os quatro comandos e o SQL do histórico existem e têm teste. **Nada do frontend existe** — a lateral continua listando chats.
+**Status:** requisitos escritos (2026-09-04). **Bloqueador levantado em 2026-09-05** — a âncora de posição foi decidida em `.specs/features/book-reader/`, e é de lá que vêm as tasks. **Backend em pé desde 2026-09-06** (T7 da `book-reader`): as colunas, os comandos e o SQL do histórico existem e têm teste. **O frontend existe desde 2026-09-06** (T8-T11): a lateral lista leituras, não chats — mas **nenhuma tela foi vista rodando**. **HIST-09 acrescentado em 2026-09-07** (apagar uma entrada), com o backend testado e a interface apenas compilada.
 
 ## Problem Statement
 
@@ -69,6 +69,20 @@ Open questions: nenhuma. A única que existia — **qual é a âncora da posiç�
 
 ---
 
+### P1: Apagar uma leitura do histórico
+
+**User Story**: Como leitor, quero apagar uma leitura do histórico, para tirar da lateral um livro que não estou mais lendo.
+
+**Acceptance Criteria**:
+
+1. WHEN o usuário aciona apagar numa entrada do histórico THEN o sistema SHALL pedir confirmação, porque a posição de leitura será perdida
+2. WHEN a remoção é confirmada THEN o sistema SHALL zerar `last_opened_at` **e** `last_page` daquele livro
+3. WHEN a entrada é apagada THEN o livro SHALL sumir do histórico e SHALL permanecer na Biblioteca, com o arquivo importado e **todas** as pastas de tradução intactas em disco
+4. WHEN um livro apagado do histórico é reaberto THEN o sistema SHALL começar da primeira página
+5. WHEN uma entrada é apagada THEN as demais entradas do histórico SHALL permanecer intactas
+
+---
+
 ## Edge Cases
 
 - WHEN o livro é reprocessado por uma versão nova do extrator THEN a posição salva SHALL continuar apontando para o mesmo trecho do texto, ou SHALL ser invalidada explicitamente — silenciosamente deslocar o marcador é o modo de falha a evitar
@@ -80,7 +94,7 @@ Open questions: nenhuma. A única que existia — **qual é a âncora da posiç�
 
 `design.md` e `tasks.md` desta feature **só podiam ser escritos depois** que o design do leitor definisse a âncora de posição. Escrever a migração antes disso seria gastar um número de migração num esquema que ia mudar.
 
-**A âncora foi decidida em `.specs/features/book-reader/`**: a posição de leitura é o **índice de página** (base 0) na paginação persistida do livro, gravada em `books.last_page` pela migração 10. Consequência: esta feature **não ganha `design.md` nem `tasks.md` próprios** — os oito HIST-xx são implementados pelas tasks da `book-reader`, e a rastreabilidade abaixo aponta para lá. Isso é deliberado: dois `tasks.md` para o mesmo código seriam duas fontes de verdade.
+**A âncora foi decidida em `.specs/features/book-reader/`**: a posição de leitura é o **índice de página** (base 0) na paginação persistida do livro, gravada em `books.last_page` pela migração 10. Consequência: esta feature **não ganha `design.md` nem `tasks.md` próprios** — os HIST-01..HIST-08 são implementados pelas tasks da `book-reader` (o HIST-09, acrescentado depois, foi implementado direto, sem task da `book-reader`), e a rastreabilidade abaixo aponta para lá. Isso é deliberado: dois `tasks.md` para o mesmo código seriam duas fontes de verdade.
 
 ⚠️ **Executado até aqui (2026-09-06):** a migração 10 (T2), o layout em disco e o processamento (T5/T16/T17) e os comandos de leitura e histórico (T7) — `open_book`, `save_reading_position`, `get_book_page`, `list_reading_history`, em `src-tauri/src/reader_commands.rs`, com 8 testes contra banco em memória e pasta temporária. **O frontend passou a existir** (T8-T11, T15): `readerStore`, `ReaderPanel`, `ReadingList` na lateral e a rota `reader`, com `npm run build` **exit 0**. Continua valendo o essencial: **nenhum comando Tauri rodou** (não há runner de integração neste projeto), **não há suíte de frontend** (`npm test` sai com *"No test files found"*, exit 1) e **nenhuma tela foi vista** — todo HIST-xx que depende de comportamento espera a T13.
 
@@ -98,5 +112,6 @@ Open questions: nenhuma. A única que existia — **qual é a âncora da posiç�
 | HIST-06 | P1: Reabrir na posição salva | `book-reader` T7: `open_position` devolve `last_page` clampado | **metade verificada (backend)** — `reopening_a_book_returns_the_saved_page` e `a_position_beyond_the_page_count_is_clamped_on_open` (257/0/16). pending — **reabrir pela tela é T11/T13** · **T11:** clicar numa entrada da lateral chama `readerStore.openBook`, que pede a posição ao backend em vez de adivinhá-la, e o idioma de leitura vem de `list_book_languages` (a `ReadingEntry` não carrega essa coluna). **Só compila**; fechar o app, reabrir e cair na página certa é T13, item 6 |
 | HIST-07 | P1: Livro nunca aberto começa do início | `book-reader` T7: `last_page` NULL → 0, e a abertura não grava posição | **verificado em unidade** — `a_book_never_opened_starts_at_the_first_page` (257/0/16): devolve 0 **e a coluna continua NULL**; `an_imported_book_never_opened_is_not_in_the_history` confere o outro lado, o livro importado fora do histórico |
 | HIST-08 | P1: Remover o livro remove o histórico | in tasks | pending — `book-reader` T2 |
+| HIST-09 | P1: Apagar uma leitura do histórico | `forget_position` + comando `forget_reading_entry` em `src-tauri/src/reader_commands.rs`; `readerApi.forgetReadingEntry`; botão de lixeira por linha na `ReadingList`, com `window.confirm` (mesmo padrão do `BookEditPanel`); chaves `reader.historyRemove` e `reader.historyRemoveConfirm` | **backend verificado por teste; a tela só compila.** `deleting_a_history_entry_forgets_the_position_and_keeps_the_book` cobre AC 2/3/5 (as duas colunas voltam a NULL, o vizinho segue no histórico com a posição dele, o `.epub` e as pastas `original/`, `pt/` e `en/` continuam em disco com o mesmo número de páginas) e `a_book_deleted_from_the_history_reopens_at_the_first_page` cobre AC 4 (7 → 0); `forgetting_a_book_that_does_not_exist_is_an_error` cobre a linha inexistente. Suíte em **269/0/17** (2026-09-07); com o `last_page = NULL` removido do UPDATE, **2 desses testes falham** — foi medido. **AC 1 e o sumiço da linha nunca foram vistos**: `npm run build` **exit 0** e nada mais, porque não há suíte de frontend (`npm test`: *"No test files found"*, exit 1) e o app não foi aberto |
 
 **ID format:** `HIST-[NUMBER]`
