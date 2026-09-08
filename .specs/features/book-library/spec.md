@@ -1,4 +1,10 @@
-# Biblioteca de livros (PDF + Kindle) — Specification
+# Biblioteca de livros (EPUB) — Specification
+
+> **2026-09-08 (AD-065): o escopo encolheu para `.epub`.** O título e o texto abaixo ainda falam em
+> "PDF + Kindle" porque descrevem por que a feature nasceu assim; o que o app **aceita hoje** é
+> apenas EPUB. Livros já importados em `.pdf`, `.mobi`, `.azw` e `.azw3` continuam na biblioteca,
+> abrindo e sendo reprocessados — nada no caminho de leitura ou na migração de layout consulta a
+> lista de extensões. Os requisitos afetados estão marcados na tabela de rastreabilidade.
 
 **Milestone:** M10 — Pivô para leitor
 **Status:** **implementado em 2026-09-05 (T1–T8 de 9), não verificado no app.** Os gates passaram — `cargo test --lib` **195 passando / 0 falhas / 15 ignorados** (baseline da T1: 177/0/15), `cargo check --lib` **zero warnings**, `npm run build` exit 0 com o bundle mudando para `index-BhmqRmEJ.js`, i18n **158/158 chaves**. **`npm run tauri dev` não rodou uma única vez e nenhum `invoke` foi disparado.** Por isso **nenhum requisito abaixo está `Verified`** — marcá-los seria repetir o erro registrado na AD-027. A T9 é a UAT que fecha isso.
@@ -11,7 +17,7 @@ Esta feature entrega só a metade que dá para verificar hoje: importar, guardar
 
 ## Goals
 
-- [x] Importar PDF e livros Kindle (`.epub`, `.mobi`, `.azw`, `.azw3`) pela aba que era Documentos
+- [x] ~~Importar PDF e livros Kindle (`.epub`, `.mobi`, `.azw`, `.azw3`)~~ **Reduzido a `.epub` em 2026-09-08 (AD-065)** — importar EPUB pela aba que era Documentos
 - [x] Guardar os arquivos em `<base_path>/library/`
 - [x] Botão que abre essa pasta no explorador de arquivos do sistema, com o caminho absoluto visível ao lado
 - [x] **Nenhum passo de RAG** sobre esses arquivos — nem parsing, nem chunking, nem embedding, nem LanceDB
@@ -141,11 +147,11 @@ Open questions: nenhuma bloqueia esta feature. A única em aberto no milestone �
 
 | Requirement ID | Story | Phase | Evidência medida — e o que falta |
 | --- | --- | --- | --- |
-| LIB-01 | P1: Seletor nativo filtrado aos 5 formatos | **Implemented** (T6) | `open()` do `@tauri-apps/plugin-dialog` com `extensions: ["pdf","epub","mobi","azw","azw3"]`, compilado por `tsc` (`npm run build` exit 0). **Nunca aberto:** o seletor é UI do SO e só existe com o app rodando — T9 |
+| LIB-01 | ⚠️ **ALTERADO** — P1: Seletor nativo filtrado ~~aos 5 formatos~~ **a `.epub`** (AD-065) | **Implemented** (T6) | `open()` do `@tauri-apps/plugin-dialog` com `extensions: ["epub"]`, compilado por `tsc` (`npm run build` exit 0). **Nunca aberto:** o seletor é UI do SO e só existe com o app rodando — T9 |
 | LIB-02 | ⛔ **REVOGADO como estava escrito** — P1: Copiar para `library/` com sufixo em colisão | **Superseded** pela `book-reader` READ-32 (T17, 2026-09-06) | O critério hoje: o arquivo vai para `library/<pasta>/<arquivo>`, o **nome do arquivo nunca muda** e o sufixo `(2)` recai sobre a **pasta**. Medido: `a_second_book_with_the_same_name_gets_a_suffix_instead_of_overwriting` foi **atualizado, não apagado** — dois `livro.pdf` diferentes viram `livro/livro.pdf` (`b"primeiro"`) e `livro (2)/livro.pdf` (`b"segundo"`); mais `two_books_that_would_share_a_folder_name_get_a_suffix` (`a.pdf` → `a/`, `a.epub` → `a (2)/`) e `importing_puts_the_file_inside_a_folder_of_its_own`. Suite em **227 passando / 0 falhas / 16 ignorados**. `unique_destination` continua **reusada** de `document_commands.rs`, agora para nomear a pasta. **Falta, igual antes:** o comando `import_books` em si nunca rodou |
 | LIB-03 | P1: Recusar extensão fora da lista, sem derrubar a seleção | **Implemented** (T3, T4, T6) | units `the_five_book_formats_are_accepted`, `other_formats_are_refused` (`.docx`, `.kfx`, `.txt`, `.md`, sem extensão) e `a_mixed_selection_keeps_the_valid_files_and_names_the_refused_ones` — o válido entra, os dois recusados são nomeados e **não tocam a pasta**. O painel renderiza `rejected.map(...)` com nome + motivo. **Falta:** essa lista nunca foi vista na tela |
 | LIB-04 | P1: Recusar importação sem pasta-base configurada | **Implemented, NÃO MEDIDO** (T4) | Escrito: o erro vem do `load_config` através de `library_dir()`. **Zero prova de execução** — `library_dir()` exige um `AppHandle` e **nunca rodou**, em teste nenhum. É a T9 |
-| LIB-05 | P1: Recusar `.mobi`/`.azw`/`.azw3` com DRM | **Implemented** (T3) | units com PalmDB sintético: campo de criptografia em **0** → `Ok(false)`; em **1** e **2** → `Ok(true)`; truncado / offset inválido / inexistente → **`Err`**, nunca "limpo". Essa última asserção pegou um defeito real durante a T3 (86 bytes zerados eram relatados como sem DRM) e continua no teste. **Falta:** nenhum `.mobi`/`.azw`/`.azw3` **real** passou por aqui — os offsets batem com o formato documentado, não com um arquivo produzido por um Kindle |
+| LIB-05 | ⛔ **REVOGADO** — P1: Recusar `.mobi`/`.azw`/`.azw3` com DRM | **Removed** (AD-065, 2026-09-08) | Os três formatos deixaram de ser importáveis, então a checagem passou a ser código inalcançável. `palmdb_has_drm` e seus três testes foram **apagados** junto com o requisito, não deixados órfãos. O que o requisito defendia — "um arquivo que não pode ser inspecionado nunca é importado como limpo" — continua vivo em LIB-06, e a prova de que um livro protegido não deixa arquivo na biblioteca foi reescrita com um EPUB protegido em `a_mixed_selection_keeps_the_valid_files_and_names_the_refused_ones`. Evidência histórica: | units com PalmDB sintético: campo de criptografia em **0** → `Ok(false)`; em **1** e **2** → `Ok(true)`; truncado / offset inválido / inexistente → **`Err`**, nunca "limpo". Essa última asserção pegou um defeito real durante a T3 (86 bytes zerados eram relatados como sem DRM) e continua no teste. **Falta:** nenhum `.mobi`/`.azw`/`.azw3` **real** passou por aqui — os offsets batem com o formato documentado, não com um arquivo produzido por um Kindle |
 | LIB-06 | P1: Recusar `.epub` com DRM | **Implemented** (T3) | units com zip montado pelo crate `zip`: com `META-INF/encryption.xml` → `Ok(true)`; sem → `Ok(false)`; arquivo que não abre como zip → `Err`. **Falta:** nenhum EPUB real, com ou sem DRM |
 | LIB-07 | P1: Registrar em `books` sem nenhum passo de RAG | **Implemented** (T2, T4) | migração **9** conferida na lista antes de escrever; units `books_is_migration_nine`, `a_fresh_database_gets_the_books_table_at_version_nine`, `a_database_stopped_at_eight_upgrades_to_nine_keeping_its_rows` e `importing_a_book_writes_to_books_and_never_to_documents` (`COUNT(*) FROM books = 1`). **Falta:** a migração **não foi ensaiada contra cópia de banco real** (`db::real_database` continua `#[ignore]`) |
 | LIB-08 | P1: Não escrever em `documents` | **Implemented** (T4) | mesmo teste acima, na asserção `COUNT(*) FROM documents = 0` depois de importar. É a prova mais direta de "sem RAG" que existe sem abrir o app |

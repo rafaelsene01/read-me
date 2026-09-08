@@ -14,7 +14,10 @@ import { BookEditPanel } from "./BookEditPanel";
 import { ProcessDialog } from "./ProcessDialog";
 import type { BookRecord } from "../../types";
 
-const BOOK_EXTENSIONS = ["pdf", "epub", "mobi", "azw", "azw3"];
+// The reader renders the book's own HTML, CSS and fonts (`epub-fidelity`), and
+// nothing else reaches it that way. The dialog filter is only a hint — the gate
+// that decides is `is_supported_book` in Rust.
+const BOOK_EXTENSIONS = ["epub"];
 
 export function LibraryPanel() {
   const { t } = useTranslation();

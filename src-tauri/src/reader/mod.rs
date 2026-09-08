@@ -10,5 +10,6 @@ pub mod epub;
 pub mod html;
 pub mod illustrations;
 pub mod pagination;
+pub mod sanitize;
 pub mod storage;
 pub mod translate;

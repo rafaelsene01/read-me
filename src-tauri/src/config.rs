@@ -22,6 +22,22 @@ pub struct AppConfig {
     pub auto_update_check: bool,
     #[serde(default)]
     pub skipped_version: Option<String>,
+    /// Read-aloud (TTS-23, TTS-32). Both `#[serde(default)]`, like the update
+    /// fields above: a config written before this feature keeps deserializing
+    /// instead of resetting the wizard.
+    ///
+    /// The voice is stored **per language** because a book in English and a
+    /// book in Portuguese are read by different voices, and choosing one must
+    /// not silently change the other.
+    #[serde(default)]
+    pub tts_voices: std::collections::BTreeMap<String, String>,
+    #[serde(default = "default_speed")]
+    pub tts_speed: f32,
+}
+
+/// Normal speed. The scale is the reader's: above 1 is faster.
+fn default_speed() -> f32 {
+    1.0
 }
 
 fn default_true() -> bool {
@@ -37,6 +53,8 @@ impl Default for AppConfig {
             onboarding_completed: false,
             auto_update_check: true,
             skipped_version: None,
+            tts_voices: std::collections::BTreeMap::new(),
+            tts_speed: default_speed(),
         }
     }
 }

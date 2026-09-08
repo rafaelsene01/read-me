@@ -1,4 +1,5 @@
-// SPEC: book-illustrations (ILLUS-03, ILLUS-04, ILLUS-07, ILLUS-12)
+// SPEC: book-illustrations (ILLUS-03, ILLUS-04, ILLUS-07, ILLUS-12),
+//       read-aloud (TTS-02)
 
 //! The marker that puts a picture back into a stream of paragraphs.
 //!
@@ -67,6 +68,38 @@ pub fn marker_name(paragraph: &str) -> Option<&str> {
     is_image_name(name).then_some(name)
 }
 
+/// The same text with every marker taken out, wherever it sits.
+///
+/// `marker_name` answers about a whole paragraph, which is how pagination and
+/// translation meet a marker. Reading aloud meets it differently: on a `.txt`
+/// page the whole page is one block, so the marker ends up glued to the
+/// sentence next to it — `[[image: 0001.png]] Segundo parágrafo.` — and a
+/// paragraph-shaped test never sees it. A voice would then spell the file name
+/// out loud.
+///
+/// Whitespace around a removed marker collapses to one space, so the sentence
+/// on either side keeps its shape.
+pub fn without_markers(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some(at) = rest.find(MARKER_PREFIX) {
+        let after = &rest[at + MARKER_PREFIX.len()..];
+        let Some(end) = after.find(MARKER_SUFFIX) else {
+            break;
+        };
+        if !is_image_name(&after[..end]) {
+            // Not a marker, just prose that happens to start the same way.
+            out.push_str(&rest[..at + MARKER_PREFIX.len()]);
+            rest = after;
+            continue;
+        }
+        out.push_str(&rest[..at]);
+        rest = &after[end + MARKER_SUFFIX.len()..];
+    }
+    out.push_str(rest);
+    out.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
 /// Exactly `NNNN.<ext>`: four digits, a dot, a short alphanumeric extension.
 ///
 /// This is a guard on a trust boundary. `get_book_image` receives this name
@@ -125,6 +158,33 @@ mod tests {
         ] {
             assert_eq!(marker_name(prose), None, "confundiu com marcador: {prose:?}");
         }
+    }
+
+    #[test]
+    fn a_marker_glued_to_a_sentence_is_removed_without_eating_the_sentence() {
+        // O caso que a leitura em voz alta expôs: numa página `.txt` a página
+        // inteira é um bloco só, e sem ponto final depois do `]]` o marcador
+        // não é um parágrafo — é o começo de uma frase.
+        assert_eq!(
+            without_markers("[[image: 0001.png]] Segundo parágrafo."),
+            "Segundo parágrafo."
+        );
+        assert_eq!(
+            without_markers("Antes. [[image: 0002.jpg]] Depois."),
+            "Antes. Depois."
+        );
+        assert_eq!(
+            without_markers("Uma. [[image: 0001.png]]\n\n[[image: 0002.png]] Duas."),
+            "Uma. Duas."
+        );
+        // Sem marcador nenhum, o texto sai como entrou (a não ser pelo espaço
+        // colapsado, que é o mesmo que `visible_text` já faz).
+        assert_eq!(without_markers("Nada aqui."), "Nada aqui.");
+        // Prosa que começa igual não é marcador e não pode ser comida.
+        assert_eq!(
+            without_markers("O código [[image: qualquer]] ficou."),
+            "O código [[image: qualquer]] ficou."
+        );
     }
 
     #[test]

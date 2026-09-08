@@ -1,4 +1,4 @@
-// SPEC: book-reader (READ-10), book-illustrations (ILLUS-12)
+// SPEC: book-reader (READ-10), book-illustrations (ILLUS-12), read-aloud (TTS-02)
 
 //! Turning an extracted book into pages, deterministically.
 //!
@@ -141,14 +141,19 @@ fn paragraph_starts(text: &str) -> Vec<usize> {
     starts
 }
 
-/// Offsets where a sentence *begins*, used only when a single paragraph is
-/// wider than a page.
+/// Offsets where a sentence *begins*, used when a single paragraph is wider
+/// than a page — and, since read-aloud, to decide what one utterance is.
+///
+/// `pub(crate)` for that second caller and no other reason: **there is one
+/// definition of "sentence" in this app**. A second one would drift, and the
+/// one that drifted would cut a sentence in the middle of the audio — the same
+/// argument that keeps `split_paragraphs` single (READ-22, TTS-02).
 ///
 /// A terminator has to be followed by whitespace to count, which is what keeps
 /// "3.14" and "art. 5" from being read as two sentences. Closing quotes and
 /// brackets belong to the sentence that ends, so `disse "sim."` breaks after
 /// the quote and not before it.
-fn sentence_starts(text: &str) -> Vec<usize> {
+pub(crate) fn sentence_starts(text: &str) -> Vec<usize> {
     const PENDING_NONE: u8 = 0;
     const PENDING_TERMINATOR: u8 = 1;
     const PENDING_SPACE: u8 = 2;

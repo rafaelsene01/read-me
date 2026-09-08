@@ -68,7 +68,7 @@
     "import": "Importar livros",
     "importing": "Importando…",
     "fileDialogTitle": "Escolha os livros",
-    "supportedFormats": "PDF, EPUB, MOBI, AZW e AZW3",
+    "supportedFormats": "EPUB",
     "openFolder": "Abrir pasta",
     "rejected": "Não importado: {{name}} — {{reason}}",
     "empty": "Nenhum livro importado ainda.",
@@ -127,7 +127,11 @@
     "historyRemoveConfirm": "Tirar {{name}} do histórico? A posição de leitura é perdida e o livro volta a começar da primeira página. O arquivo e as traduções continuam na Biblioteca.",
     "illustration": "Gravura",
     "imageMissing": "Gravura indisponível",
-    "bookPage": "Página do livro"
+    "bookPage": "Página do livro",
+    "readAloud": "Ler em voz alta",
+    "pauseAloud": "Pausar leitura",
+    "stopAloud": "Parar leitura",
+    "systemVoice": "Lendo com a voz do sistema — baixe uma voz para ter melhor qualidade."
   },
   "runtime": {
     "title": "Runtime",
@@ -187,7 +191,8 @@
     "contextMax": "até {{max}} (80% do que o modelo foi treinado para)",
     "contextMaxUnknown": "o runtime não informa o limite",
     "contextCurrent": "em uso: {{current}}",
-    "useRuntimeDefault": "Usar o padrão do runtime"
+    "useRuntimeDefault": "Usar o padrão do runtime",
+    "tabVoices": "Vozes"
   },
   "update": {
     "availableTitle": "A versão {{version}} está disponível",
@@ -237,5 +242,25 @@
     "storageLostTitle": "Pasta de armazenamento não encontrada",
     "storageLostSubtitle": "Confirme onde o ReadMe deve guardar seus dados para continuar.",
     "storageLostWarning": "A pasta {{path}} não está mais disponível. Se ela estiver num drive removível, conecte-o de volta e escolha a mesma pasta; caso contrário, escolha outra. Os dados que estavam nela não são recuperados por esta etapa."
+  },
+  "voices": {
+    "speed": "Velocidade da leitura",
+    "download": "Baixar",
+    "use": "Usar",
+    "test": "Testar esta voz",
+    "remove": "Remover voz",
+    "removeConfirm": "Remover a voz \"{{name}}\"? O arquivo sai do disco.",
+    "removed": "Voz removida — {{size}} liberados.",
+    "sample": "É assim que esta voz lê um livro.",
+    "refresh": "Carregar todas as vozes",
+    "refreshed": "{{count}} vozes disponíveis.",
+    "filter": "Filtrar por idioma ou nome",
+    "sharedModel": "As vozes Kokoro dividem o mesmo modelo: baixar uma libera todas, e nenhuma sai do disco sozinha.",
+    "included": "já incluída no modelo baixado",
+    "chosenLabel": "Vozes em uso:",
+    "unpin": "Deixar de usar esta voz para o idioma",
+    "languageFilter": "Filtrar por idioma",
+    "allLanguages": "Todos os idiomas",
+    "empty": "Nenhuma voz com esses filtros."
   }
 }

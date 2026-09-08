@@ -19,6 +19,180 @@
 
 **Gate:** `npm run build` **exit 0**. **Não verificado:** o app não foi reaberto depois desta correção — quem clica é o usuário. Não há suíte de frontend que pudesse pegar isto, e é o segundo defeito seguido que só a UAT encontrou (o primeiro foi a AD-057): **os dois passaram por `tsc`, `vite` e 265 testes de backend sem um arranhão.**
 
+### AD-065: A importação passa a aceitar só EPUB (2026-09-08)
+
+**O pedido:** "ajuste para o import receber somente EPUB".
+
+A biblioteca aceitava cinco formatos (`pdf`, `epub`, `mobi`, `azw`, `azw3`). O leitor, desde a
+`epub-fidelity`, renderiza o HTML, o CSS e as fontes do próprio livro; os outros quatro chegavam como
+texto plano, que é exatamente a experiência que aquela feature existe para substituir.
+
+**O portão é um só:** `library_commands::is_supported_book`, consultado em `import_books` e em lugar
+nenhum mais. Verificado por `grep`: `migrate_layout` trabalha a partir de linhas do banco, e o
+caminho de abrir/ler/reprocessar não olha extensão. **Livro já importado não é afetado** — um PDF na
+biblioteca continua abrindo, migrando de layout e sendo reprocessado.
+
+**O que saiu junto, e por quê.** Com `mobi`/`azw`/`azw3` fora, `palmdb_has_drm` virou código
+inalcançável — o tipo de coisa que o `AGENTS.md` proíbe deixar para trás, porque "mente com
+autoridade". Foram apagados a função e três testes (`a_palmdb_without_encryption_passes`,
+`a_palmdb_with_a_non_zero_encryption_field_is_refused`,
+`a_truncated_palmdb_is_a_read_error_not_a_clean_file`), mais `a_pdf_is_never_inspected`, que
+documentava uma decisão de escopo sobre um formato que não entra mais. **A suíte caiu de 335 para
+331 exatamente por esses quatro**, e o requisito que eles defendiam (LIB-05) está marcado como
+revogado na spec, não apagado em silêncio.
+
+**O que NÃO saiu:** a detecção de DRM em EPUB (LIB-06) e a prova de que um livro protegido não deixa
+arquivo na biblioteca. Esta última usava um MOBI com DRM; foi reescrita com um EPUB carregando
+`META-INF/encryption.xml`, porque um MOBI agora é recusado antes da checagem e o teste passaria pelo
+motivo errado — a armadilha que a AD-041 registra.
+
+**Gate:** `cargo test --lib` **331 passando / 0 falhas / 22 ignorados**; `npm run build` exit 0; i18n
+em paridade. **Não verificado:** o diálogo de arquivo não foi aberto — é UI do sistema operacional e
+só existe com o app rodando.
+
+### AD-064: O catálogo é ordenado depois de juntar os dois motores, e o Kokoro lidera o idioma (2026-09-08)
+
+**O relato:** "o Kokoro não tem mais voz em português?". Tinha — `pf_dora`, `pm_alex` e `pm_santa`
+estavam no catálogo o tempo todo. Duas coisas as escondiam:
+
+1. **`catalog()` ordenava e só então anexava.** `parse_manifest` devolve a lista do piper já ordenada
+   por idioma; o `all.extend(kokoro_catalog())` vinha depois. Com o catálogo completo carregado, as
+   dez vozes do Kokoro caíam no fim de 186 linhas, atrás de todos os 57 idiomas. Agora a ordenação
+   virou `sort_catalog` e roda **depois** do extend.
+2. **`quality_rank("kokoro")` valia 0** — abaixo de `low`. Mesmo ordenado, o melhor motor do app
+   aparecia por último dentro do próprio idioma. Passou a valer 4, acima de `high`.
+
+Coberto por `voices::tests::a_kokoro_voice_sits_with_its_own_language_and_leads_it`, verificado por
+mutação: sem a chamada a `sort_catalog` o teste **falha**.
+
+**Filtro de idioma na tela.** A aba de vozes tinha só uma caixa de texto. Ganhou um seletor de idioma
+alimentado pelo próprio catálogo (o app não sabe de antemão quantos idiomas existem: são 6 vozes
+antes de "carregar todas" e 176 em 57 idiomas depois), combinado com a busca por texto, e uma linha
+quando o filtro não acha nada.
+
+**Vozes fixadas visíveis.** O modelo de dados já era um mapa idioma→voz, mas nada disso aparecia na
+tela — a única forma de saber qual voz respondia por qual idioma era dar play e ouvir. Agora as
+fixadas ficam no topo da aba, uma por idioma, cada uma com um X para desafixar.
+
+**Números do piper, medidos no manifesto em disco:** 176 vozes em 57 idiomas; em português, 4 `pt_BR`
+(`cadu`, `faber` e `jeff` em `medium`, mais `edresson` em `low`, que a poda esconde porque o idioma
+já tem `medium`) e 1 `pt_PT` (`tugão`).
+
+**Gate:** `cargo test --lib` **335 passando / 0 falhas / 22 ignorados**; `npm run build` exit 0.
+**Não verificado:** nada foi clicado no app — a porta 1420 seguia ocupada pela instância do usuário.
+
+### AD-063: Síntese sai da thread principal, e a voz fixada é procurada como idioma, não como string (2026-09-08)
+
+Três defeitos relatados pelo usuário na mesma sessão, todos no caminho do Kokoro. Nenhum apareceu em
+teste automatizado: `cargo test --lib` estava em 333/0/21 e `npm run build` limpo.
+
+**1. "testar voz do Kokoro trava o programa".** `speak_sentence` era `#[tauri::command]` sem `async`,
+e no Tauri 2 um comando síncrono roda **na thread principal** — a que bombeia a janela. Medido nesta
+máquina com o modelo real: **2,32 s a frio** (carrega 325 MB de grafo) e **936 ms a quente**, para
+3,17 s de áudio. Ou seja, o modelo é mais rápido que tempo real; o que travava era o lugar. Com o
+Piper os ~236 ms cabiam ali sem ninguém notar, e o defeito existia desde sempre. Corrigido com
+`#[tauri::command(async)]`.
+
+**2. O `ORT_DYLIB_PATH` nunca era apontado nesse caminho.** Só o pipeline de documentos chamava
+`onnxruntime::ensure_dylib`. Esta árvore carrega **duas** `onnxruntime.dll` — a 1.28.0 em
+`resources/onnxruntime` e a do piper, de 2023 — e qual delas o `ort` pegava dependia da ordem de
+busca do sistema. Agora `speak_sentence` chama `ensure_dylib_blocking` antes de abrir a sessão
+Kokoro. O `ensure_dylib` `async` continua existindo e delega para a versão síncrona, para não haver
+duas fontes de verdade.
+
+**3. "escolho outra voz e o play não troca".** `voice_for` procurava a voz fixada com
+`config.tts_voices.get(&language)` — **igualdade exata de string**. O leitor pergunta pelo idioma da
+página, e num livro não traduzido essa palavra é `original`; a tela grava sob a chave do catálogo,
+`pt_BR`. As duas nunca batiam, então a escolha do usuário era ignorada em silêncio e o leitor seguia
+com o que o store tinha em cache. Agora existe `voices::pinned_for`, que compara pelo mesmo prefixo
+que o `resolve` já usava (`original`, `pt`, `pt-BR` e `pt_BR` todos respondem `pt`), com igualdade
+exata ganhando do prefixo. Coberto por
+`voices::tests::the_pinned_voice_is_found_even_when_the_page_calls_its_language_original`.
+
+**O que NÃO era defeito:** "baixei uma voz Kokoro e ele mostrou que baixou todas". É verdade — as dez
+vozes Kokoro são vetores de estilo de 0,5 MB dentro de um único modelo de 325 MB que todas dividem, e
+o `download_voice` já pulava o segundo download. A tela é que não dizia isso, e ainda oferecia uma
+lixeira que o backend recusava. Passou a dizer, e a lixeira sumiu das linhas do Kokoro.
+
+**Gate:** `cargo test --lib` **334 passando / 0 falhas / 22 ignorados**; `npm run build` exit 0. O
+ignorado novo é `kokoro::tests::one_sentence_is_synthesised_and_the_cost_is_measured`, que exige o
+modelo real por variável de ambiente e é de onde vêm os números acima. **Não verificado:** nada disto
+foi clicado no app depois da correção — a porta 1420 estava ocupada pela instância do próprio
+usuário, e eu não a derrubei.
+
+### AD-062: O Job Object do leitor de voz vive tanto quanto o processo, nunca quanto a linha (2026-09-08)
+
+**O defeito:** todo play falhava com *"o leitor de voz encerrou sem responder"*. O piper rodava
+perfeitamente na mão, com exatamente os mesmos argumentos.
+
+**A causa:** `speaker::start` fazia `JobState::create().assign(&child)`. O job é criado com
+`JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`, e o `runtime/job.rs` diz no próprio cabeçalho o que isso
+significa: *"quando o último handle do job vai embora ... o Windows termina tudo dentro dele"*. Um
+`JobState` temporário morre no fim da expressão. Ou seja: o filho entrava no job e o kernel o matava
+no mesmo instante — o mecanismo funcionando exatamente como projetado, contra nós.
+
+**A decisão:** o job vira `static PIPER_JOB: OnceLock<JobState>` dentro do `speaker`. Um handle por
+processo, aberto na primeira frase e fechado só quando o app morre — que é precisamente quando ele
+*deve* matar o piper. Isto respeita o que o `job.rs` já mandava ("um job para o processo, não um por
+sidecar", SIDE-08) e não custa nem um handle a mais.
+
+**Por que não passar o `JobState` gerenciado pelo app:** `lib.rs` já faz `app.manage(JobState::create())`,
+e seria reuso mais puro. Custaria um parâmetro novo em `speak`, em `speak_with` e na struct `Request`,
+atravessando três testes que hoje não conhecem `AppHandle`. Três linhas de `OnceLock` compram a mesma
+garantia. Se um dia o piper precisar do mesmo job dos sidecars, esse é o momento de pagar o parâmetro.
+
+**Gate:** `cargo test --lib` **333 passando / 0 falhas / 21 ignorados** (o baseline era 265/0/17). O
+teste novo, `speaker::tests::the_job_outlives_the_statement_that_assigns_the_child`, foi verificado
+por mutação: repondo a linha antiga ele **falha**. E a leitura foi ouvida no app rodando — ver L-011.
+
+### AD-061: O sandbox do leitor abre para o karaokê, e a defesa passa a ser a sanitização (2026-09-07)
+
+**O pedido:** ler a página em voz alta marcando onde está lendo, com escolha de vozes e idiomas, e
+podendo clicar num trecho para começar dali.
+
+**Três correções de premissa, todas medidas antes de qualquer código:**
+
+1. **Não é o modelo que lê.** O llama.cpp gera texto, não áudio.
+2. **O Piper não dá tempo por palavra.** O flag `--alignment-data` é o PR #407 do `rhasspy/piper` —
+   **aberto, nunca mergeado**, e só no script Python.
+3. **O projeto vivo do Piper não publica executável.** `OHF-Voice/piper1-gpl` v1.8.0 tem só wheels
+   (34.119.688 bytes) e é **GPL-3.0** por embutir o espeak-ng. Quem publica binário nativo é o
+   `rhasspy/piper` **arquivado**, e ele é **MIT**. O caminho vivo custava mais e obrigava à GPL.
+
+**Medições do spike, feitas rodando o binário nesta máquina:** 593 ms para a primeira frase (processo
+frio), 1.536 ms para cinco frases num processo só, ~236 ms marginais por frase, síntese ~10× o tempo
+real, WAV 22.050 Hz mono 16 bits. **O processo fica vivo lendo linhas do stdin** — cinco linhas, cinco
+WAVs, modelo carregado uma vez. Foi essa medição que escolheu o sidecar de vida longa em vez de um
+processo por frase.
+
+**A decisão que sobe para nível de projeto:** o iframe do leitor deixa de ser `sandbox=""` e passa a
+`sandbox="allow-scripts"`, **sem** `allow-same-origin`. Isso **revoga metade da FID-04**: a origem
+continua opaca (o CSS do livro não vaza, o script da página não alcança o app), mas o `<script>` do
+livro deixa de ser barrado pelo navegador. A defesa passa a ser `reader/sanitize.rs`, na extração —
+o que significa que **ela agora exige manutenção**, custo que o design da `epub-fidelity` tinha
+recusado de propósito e que o usuário aceitou para ter o karaokê.
+
+**O council mudou o plano em dois pontos**, e os dois estão no código:
+
+- **A unidade da marcação virou a FRASE, não a palavra.** A duração da frase é medida (o tamanho do
+  WAV); a da palavra seria interpolada por peso de caracteres. Duas das três vozes chamaram isso de
+  precisão fingida — "1999" tem 4 caracteres e cinco sílabas, e CJK não tem espaço para pesar.
+  Palavra fica na P2, **condicionada a medir a deriva** num livro real.
+- **O Shadow DOM foi levantado e rejeitado.** Parecia mais barato que o iframe, mas põe HTML de
+  terceiro na origem do próprio app, com `invoke` alcançável, e não dispensa o sanitizador
+  (`<img onerror>` dispara igual). O iframe ao menos mantém a origem opaca.
+
+**Voz é modelo, não componente.** Achado lendo o repositório: a SELF-10 registra que componente de
+runtime nunca baixa, enquanto os GGUF têm catálogo curado e `download_with_progress`, e a faxina da
+SELF-18 preserva os modelos. Então o **binário** vai no instalador e as **vozes** são baixadas sob
+demanda — que é o que torna "vários idiomas" barato: o instalador não engorda por idioma que ninguém
+usa.
+
+**Medido depois de implementar:** o vendoring trouxe o piper em **28,6 MB** já podado (o
+`libtashkeel_model.ort`, 10.261.536 bytes de árabe, foi removido), levando `resources/` de ~156 MB
+para **184,7 MB**. E — a lição da AD-046 — o binário **podado, do bundle**, foi **executado**: exit 0,
+WAV de 69.280 bytes em 1.102 ms. Poda provada por execução, não por inspeção da pasta.
+
 ### AD-060: EPUB é HTML+CSS, e o app estava jogando isso fora — a `book-illustrations` foi substituída (2026-09-07)
 
 **O que provocou:** o usuário mandou o print de uma página do livro e disse *"a página do programa
@@ -1109,6 +1283,54 @@ _Nenhum._
 ---
 
 ## Lessons Learned
+
+### L-011: `stderr` silenciado transformou um bug de uma linha numa caçada (2026-09-08)
+
+O `speaker::start` sobe o piper com `.stderr(Stdio::null())`. Faz sentido enquanto ele funciona: o
+binário fala bastante e nada daquilo interessa. Quando ele parou de funcionar, porém, a única coisa
+que a tela sabia dizer era *"o leitor de voz encerrou sem responder"* — sem código de saída, sem
+sinal, sem nada que distinguisse "morreu", "travou" e "está vivo e mudo".
+
+Duas coisas ficaram:
+
+- a mensagem agora **nomeia o estado do filho** (`try_wait`): saiu com tal código, ainda vivo, ou
+  estado desconhecido. É a diferença entre cinco minutos e uma tarde;
+- e o filho é derrubado nesse caminho, para que a próxima tentativa suba um processo novo em vez de
+  falar com um cadáver.
+
+A lição mais geral: **o custo de silenciar um canal de erro só aparece no dia em que ele era a única
+prova.** Silenciar `stderr` continua certo; o que faltava era o caminho de falha carregar o pouco que
+ainda dá para saber sem ele.
+
+**E o defeito só apareceu clicando.** `cargo test --lib` estava em 265/0/17, `npm run build` limpo,
+`cargo check` limpo. É o terceiro defeito seguido que só a UAT encontra (AD-057, AD-060, agora
+AD-062) — e desta vez o clique foi dado aqui, não pelo usuário, o que é o que tornou o achado barato.
+
+### L-010: A pergunta "qual é mais barato" estava errada, e foi o council que percebeu (2026-09-07)
+
+A dúvida honesta era: o `speechSynthesis` do sistema dá tempo por palavra **medido**, de graça e sem
+megabyte nenhum; o Piper custa 28,6 MB no instalador, 63 MB por voz, e ainda assim só dá tempo
+**interpolado**. Por que pagar mais por menos precisão?
+
+O Skeptic derrubou a pergunta: **as duas opções não entregam a mesma coisa.** O `speechSynthesis` usa
+as vozes que existem na máquina — variam por instalação, e não há catálogo, nem escolha estável, nem
+como testar uma voz antes. O usuário tinha pedido exatamente isso. A alternativa "mais barata" era
+outro produto, e comparar preço entre produtos diferentes é comparar nada.
+
+O que **de fato** estava caro era outra coisa, e as três vozes concordaram: **abrir o sandbox**. E
+esse custo é o mesmo com qualquer motor de voz, porque marcar na página exige script na página. A
+troca de motor não teria evitado um centavo dele.
+
+Duas consequências ficaram no código:
+
+- o `speechSynthesis` **não foi descartado** — virou o fallback de primeira execução, quando nenhuma
+  voz de 63 MB foi baixada ainda. O buraco que o Critic apontou ("ouvir qualquer coisa custa um
+  download") fechou de graça;
+- a marcação desceu de palavra para **frase**, porque aí o tempo é medido em vez de estimado.
+
+**A lição sobre o método, não sobre o áudio:** quando duas opções parecem ter preços muito
+diferentes, a primeira coisa a conferir é se elas entregam a mesma coisa. Aqui eu tinha escrito uma
+spec inteira em cima da comparação errada, e o que a consertou foi pedir dissenso — não mais análise.
 
 ### L-009: Ler a spec certa é parte de ler o código — uma feature foi implementada um dia depois de ser substituída (2026-09-07)
 

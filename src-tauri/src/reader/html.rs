@@ -1,4 +1,4 @@
-// SPEC: epub-fidelity (FID-05, FID-06, FID-07, FID-08)
+// SPEC: epub-fidelity (FID-05, FID-06, FID-07, FID-08), read-aloud (TTS-02)
 
 //! Working with the book's own markup instead of throwing it away.
 //!
@@ -14,6 +14,18 @@
 //! markup - that is what `rebuild`'s validation is for.
 
 use super::epub::decode_entities;
+
+/// Elements whose **content is not prose**: it is code, or metadata, and the
+/// text inside them must never be read, spoken, or counted as page budget.
+///
+/// This is the hole read-aloud fell into. Stripping tags is not enough: the
+/// body of a `<style>` is a text node, so a document assembled with the book's
+/// stylesheet in its head came back from `visible_text` as the CSS itself —
+/// `html{-webkit-text-size-adjust:100%}body{margin:0...}` — and a voice would
+/// have spelled it out. `xhtml_to_text` in `epub.rs` had always skipped these;
+/// this function had not, and nothing before read-aloud passed it a whole
+/// document.
+const OPAQUE_TAGS: [&str; 5] = ["head", "style", "script", "title", "noscript"];
 
 /// Elements that never have a closing tag. A block that is one of these is one
 /// tag long, and looking for `</img>` would swallow the rest of the chapter.
@@ -124,15 +136,29 @@ fn tag_name(body: &str) -> String {
     name.rsplit(':').next().unwrap_or(name).to_ascii_lowercase()
 }
 
-/// The text a reader would see: tags out, entities decoded, whitespace
-/// collapsed. What the page budget counts and what the model is asked to
-/// translate.
+/// The text a reader would see: tags out, opaque elements skipped whole,
+/// entities decoded, whitespace collapsed.
+///
+/// What the page budget counts, what the translator is asked to translate, and
+/// what the voice reads. The three have to agree, which is why there is one
+/// function and not three.
 pub fn visible_text(html: &str) -> String {
     let mut out = String::with_capacity(html.len());
     let mut i = 0;
     while i < html.len() {
         match html[i..].find('<') {
-            Some(0) => i = element_end_shallow(html, i),
+            Some(0) => {
+                let tag_end = element_end_shallow(html, i);
+                let name = tag_name(html[i + 1..tag_end].trim_end_matches('>'));
+                // The whole element goes, content included: inside `<style>`
+                // the text is CSS, inside `<script>` it is code, and inside
+                // `<head>` it is metadata. None of it is the book.
+                i = if OPAQUE_TAGS.contains(&name.as_str()) {
+                    element_end(html, i)
+                } else {
+                    tag_end
+                };
+            }
             Some(lt) => {
                 out.push_str(&html[i..i + lt]);
                 i += lt;
@@ -377,6 +403,26 @@ mod tests {
             "F&C de suspense, descobriu."
         );
         assert_eq!(visible_text(r#"<div><img src="a.png"/></div>"#), "");
+    }
+
+    #[test]
+    fn the_content_of_style_and_script_is_never_text() {
+        // O defeito que a leitura em voz alta expôs: tirar tag não basta, porque
+        // o corpo de um `<style>` é nó de texto. Com o documento montado
+        // inteiro, a voz leria a folha de estilo do livro em voz alta.
+        let document = concat!(
+            "<!doctype html><html><head><meta charset=\"utf-8\">",
+            "<title>Capítulo</title>",
+            "<style>body{margin:0;font-family:Georgia}p{text-align:justify}</style>",
+            "</head><body><p>Era uma vez.</p></body></html>"
+        );
+
+        let text = visible_text(document);
+
+        assert_eq!(text, "Era uma vez.");
+        assert!(!text.contains("margin"), "leu o CSS: {text:?}");
+        assert!(!text.contains("Georgia"), "leu o nome da fonte: {text:?}");
+        assert!(!text.contains("Capítulo"), "leu o `<title>`: {text:?}");
     }
 
     #[test]

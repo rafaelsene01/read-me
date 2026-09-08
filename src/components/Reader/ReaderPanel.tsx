@@ -1,11 +1,14 @@
 // SPEC: book-reader (READ-12, READ-15, READ-16, READ-17, READ-28),
-//       book-illustrations (ILLUS-06), epub-fidelity (FID-02, FID-04)
+//       book-illustrations (ILLUS-06), epub-fidelity (FID-02, FID-04),
+//       read-aloud (TTS-03, TTS-05, TTS-12, TTS-17, TTS-33, TTS-34)
 
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { AlertTriangle, ChevronLeft, ChevronRight } from "lucide-react";
+import { AlertTriangle, ChevronLeft, ChevronRight, Pause, Play, Square } from "lucide-react";
 import { useReaderStore } from "../../store/readerStore";
 import { readerApi } from "../../lib/readerApi";
+import { READER_SCRIPT, READER_SCRIPT_CSS } from "../../lib/readerScript";
+import { useReadAloudStore } from "../../store/readAloudStore";
 import type { BookLanguage } from "../../types";
 
 // `null` is "read the original" on the whole boundary, but a <select> value is
@@ -93,6 +96,31 @@ export function ReaderPanel() {
   } = useReaderStore();
   const [languages, setLanguages] = useState<BookLanguage[]>([]);
   const blocks = useMemo(() => blocksOf(text), [text]);
+  const aloud = useReadAloudStore();
+
+  // The app's own script goes in just before `</body>`, so it lives in TS
+  // where it is readable, and the document the backend assembled stays the
+  // book's (FID-02). The page is already sanitized on disk, which is what
+  // makes `allow-scripts` safe to hand it.
+  const srcDoc = useMemo(() => {
+    if (pageFormat !== "html") return "";
+    const injected = `<style>${READER_SCRIPT_CSS}</style><script>${READER_SCRIPT}</script>`;
+    return text.includes("</body>")
+      ? text.replace("</body>", `${injected}</body>`)
+      : text + injected;
+  }, [text, pageFormat]);
+
+  // The page talks back through `postMessage` and nothing else: the frame has
+  // an opaque origin, so this is the only channel it has (TTS-12).
+  useEffect(() => {
+    function onMessage(event: MessageEvent) {
+      const data = event.data as { readaloud?: string; block?: number; offset?: number };
+      if (data?.readaloud !== "click") return;
+      void useReadAloudStore.getState().startAt(data.block ?? 0, data.offset ?? 0);
+    }
+    window.addEventListener("message", onMessage);
+    return () => window.removeEventListener("message", onMessage);
+  }, []);
 
   useEffect(() => {
     if (!bookId) {
@@ -112,6 +140,13 @@ export function ReaderPanel() {
       if (event.target instanceof HTMLSelectElement) return;
       if (event.key === "ArrowLeft") void goToPage(page - 1);
       else if (event.key === "ArrowRight") void goToPage(page + 1);
+      else if (event.key === " ") {
+        // The arrows are already the page, so space is the key left over — and
+        // it is what every reader uses (TTS-34). Default prevented so it does
+        // not scroll the panel out from under the reading.
+        event.preventDefault();
+        void useReadAloudStore.getState().toggle();
+      }
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
@@ -146,6 +181,25 @@ export function ReaderPanel() {
         </select>
 
         <div className="ml-auto flex items-center gap-2">
+          {/* TTS-33: onde a mão já está, ao lado das setas de página. */}
+          <button
+            onClick={() => void aloud.toggle()}
+            className="rounded-md p-1.5 text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)] disabled:opacity-40"
+            title={aloud.status === "playing" ? t("reader.pauseAloud") : t("reader.readAloud")}
+            aria-label={aloud.status === "playing" ? t("reader.pauseAloud") : t("reader.readAloud")}
+          >
+            {aloud.status === "playing" ? <Pause size={18} /> : <Play size={18} />}
+          </button>
+          {aloud.status !== "idle" && (
+            <button
+              onClick={() => aloud.stop()}
+              className="rounded-md p-1.5 text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
+              title={t("reader.stopAloud")}
+              aria-label={t("reader.stopAloud")}
+            >
+              <Square size={18} />
+            </button>
+          )}
           <button
             onClick={() => void goToPage(page - 1)}
             disabled={page <= 0 || isLoading}
@@ -179,6 +233,13 @@ export function ReaderPanel() {
         </p>
       )}
 
+      {/* Dizer que a voz é a do sistema, e não a escolhida, é o mesmo princípio
+          da READ-12: o silêncio faria o usuário acreditar que ouviu a voz que
+          pediu (TTS-35). */}
+      {aloud.usingSystemVoice && aloud.status !== "idle" && (
+        <p className="px-6 py-2 text-xs text-[var(--text-secondary)]">{t("reader.systemVoice")}</p>
+      )}
+      {aloud.error && <p className="px-6 py-2 text-xs text-red-500">{aloud.error}</p>}
       {error && <p className="px-6 py-2 text-xs text-red-500">{error}</p>}
 
       {/* FID-02/FID-04. `sandbox` with no token at all is the strictest
@@ -192,9 +253,14 @@ export function ReaderPanel() {
       {pageFormat === "html" ? (
         <iframe
           key={`${bookId}-${page}-${pageLanguage}`}
-          srcDoc={text}
+          data-book-page
+          srcDoc={srcDoc}
           title={t("reader.bookPage")}
-          sandbox=""
+          // `allow-scripts` without `allow-same-origin`: the app's marking
+          // script runs, the origin stays opaque, and the book's own JavaScript
+          // was already removed at extraction (`reader/sanitize.rs`). Dropping
+          // either half of that sentence turns this into a regression (TTS-12).
+          sandbox="allow-scripts"
           className="flex-1 w-full border-0 bg-white"
         />
       ) : (

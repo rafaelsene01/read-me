@@ -5,7 +5,7 @@
 //       book-reader (READ-02, READ-09, READ-11, READ-13, READ-16, READ-17, READ-26,
 //       READ-27, READ-28, READ-29, READ-30, READ-32),
 //       reading-history (HIST-02, HIST-04, HIST-05, HIST-06, HIST-07, HIST-09),
-//       book-illustrations (ILLUS-07)
+//       book-illustrations (ILLUS-07), read-aloud (TTS-01, TTS-20, TTS-21, TTS-22)
 
 mod chat;
 mod chat_commands;
@@ -24,6 +24,8 @@ mod rag;
 // `translated_pages`, `next_missing`, `split_paragraphs` — has no caller until
 // T6/T7; private would make them dead code and warn.
 pub mod reader;
+mod tts;
+mod tts_commands;
 mod runtime;
 mod system_info;
 mod update;
@@ -180,6 +182,17 @@ pub fn run() {
             reader_commands::list_reading_history,
             reader_commands::forget_reading_entry,
             reader_commands::get_book_image,
+            tts_commands::list_voices,
+            tts_commands::refresh_voice_catalog,
+            tts_commands::tts_settings,
+            tts_commands::set_tts_voice,
+            tts_commands::set_tts_speed,
+            tts_commands::download_voice,
+            tts_commands::remove_voice,
+            tts_commands::page_utterances,
+            tts_commands::voice_for,
+            tts_commands::speak_sentence,
+            tts_commands::stop_speaking,
             reader_commands::retranslate_pages,
             reader_commands::add_language,
             reader_commands::remove_language,

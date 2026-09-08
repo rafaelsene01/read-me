@@ -68,7 +68,7 @@
     "import": "Import books",
     "importing": "Importing…",
     "fileDialogTitle": "Choose books",
-    "supportedFormats": "PDF, EPUB, MOBI, AZW and AZW3",
+    "supportedFormats": "EPUB",
     "openFolder": "Open folder",
     "rejected": "Not imported: {{name}} — {{reason}}",
     "empty": "No book imported yet.",
@@ -127,7 +127,11 @@
     "historyRemoveConfirm": "Remove {{name}} from the history? The reading position is lost and the book starts from the first page again. The file and its translations stay in the Library.",
     "illustration": "Illustration",
     "imageMissing": "Illustration unavailable",
-    "bookPage": "Book page"
+    "bookPage": "Book page",
+    "readAloud": "Read aloud",
+    "pauseAloud": "Pause reading",
+    "stopAloud": "Stop reading",
+    "systemVoice": "Reading with the system voice — download a voice for better quality."
   },
   "runtime": {
     "title": "Runtime",
@@ -187,7 +191,8 @@
     "contextMax": "up to {{max}} (80% of what the model was trained for)",
     "contextMaxUnknown": "the runtime did not report the limit",
     "contextCurrent": "in use: {{current}}",
-    "useRuntimeDefault": "Use the runtime default"
+    "useRuntimeDefault": "Use the runtime default",
+    "tabVoices": "Voices"
   },
   "update": {
     "availableTitle": "Version {{version}} is available",
@@ -237,5 +242,25 @@
     "storageLostTitle": "Storage folder not found",
     "storageLostSubtitle": "Confirm where ReadMe should store your data to continue.",
     "storageLostWarning": "The folder {{path}} is no longer available. If it is on a removable drive, plug it back in and choose the same folder; otherwise pick a new one. Data that was inside it is not recovered by this step."
+  },
+  "voices": {
+    "speed": "Reading speed",
+    "download": "Download",
+    "use": "Use",
+    "test": "Test this voice",
+    "remove": "Remove voice",
+    "removeConfirm": "Remove the voice \"{{name}}\"? The file is deleted from disk.",
+    "removed": "Voice removed — {{size}} freed.",
+    "sample": "This is how this voice reads a book.",
+    "refresh": "Load all voices",
+    "refreshed": "{{count}} voices available.",
+    "filter": "Filter by language or name",
+    "sharedModel": "Kokoro voices share one model: downloading one enables them all, and none can be removed on its own.",
+    "included": "already inside the downloaded model",
+    "chosenLabel": "Voices in use:",
+    "unpin": "Stop using this voice for the language",
+    "languageFilter": "Filter by language",
+    "allLanguages": "All languages",
+    "empty": "No voice matches these filters."
   }
 }

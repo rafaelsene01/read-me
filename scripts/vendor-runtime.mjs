@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Brings the binary components that ship inside the installer into
 // src-tauri/resources/ before a build: the llama.cpp server (Vulkan and CPU),
-// the ONNX Runtime and pdfium.
+// the ONNX Runtime, pdfium and piper (text to speech).
 //
 // Until M9 these three were downloaded by the app on first use, which meant a
 // machine without internet — or behind a proxy that blocks GitHub — could never
@@ -33,7 +33,22 @@ export const LAYOUT = {
   "llama/cpu": { component: "llamaCpp", variant: "cpu" },
   onnxruntime: { component: "onnxruntime" },
   pdfium: { component: "pdfium" },
+  piper: { component: "piper" },
 };
+
+/** Files inside a component that the app never opens.
+ *
+ *  `libtashkeel_model.ort` is 10.261.536 bytes of Arabic diacritics restoration
+ *  that piper loads only for Arabic voices - measured on the extracted archive,
+ *  not guessed. It is a fifth of the whole component, in every installer and in
+ *  every portable update, for a language the catalog does not offer.
+ *
+ *  Dropping it is a poda, and this repository has been burned by one before
+ *  (AD-046: pruning llama.cpp left a 9 KB stub whose only import was gone, and
+ *  the bundled binary died at load). So the rule here names ONE file, by exact
+ *  name, instead of matching a pattern - and T-UAT has to run the bundled
+ *  binary, not just check that the folder looks right. */
+const DROPPED_BY_NAME = new Set(["libtashkeel_model.ort"]);
 
 export function hostPlatform(platform = process.platform) {
   if (platform === "win32" || platform === "linux") return platform;
@@ -89,6 +104,7 @@ const BUILD_ONLY_EXTENSIONS = [".pdb", ".lib", ".exp", ".a", ".h", ".hpp"];
  *  here in the first place. */
 export function shouldPrune(fileName) {
   const file = basename(fileName);
+  if (DROPPED_BY_NAME.has(file.toLowerCase())) return true;
   if (BUILD_ONLY_EXTENSIONS.some((ext) => file.toLowerCase().endsWith(ext))) return true;
 
   // `libfoo.so.0.0.10146` is as much a library as `foo.dll` — matching only a

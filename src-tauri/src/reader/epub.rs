@@ -1,8 +1,9 @@
 // SPEC: book-reader (READ-09), book-illustrations (ILLUS-01, ILLUS-08, ILLUS-11),
-//       epub-fidelity (FID-01, FID-03)
+//       epub-fidelity (FID-01, FID-03), read-aloud (TTS-09, TTS-10, TTS-11)
 
 use super::html;
 use super::illustrations::{self, Illustration};
+use super::sanitize;
 use crate::rag::parsing::ParseError;
 use std::io::Read;
 use std::path::Path;
@@ -79,7 +80,13 @@ pub fn extract_epub_html(path: &Path) -> Result<EpubHtml, ParseError> {
         }
 
         for block in html::split_blocks(body_of(&xhtml)) {
-            if block.trim_start().to_ascii_lowercase().starts_with("<script") {
+            // Sanitizing here, and not at display time, is what makes the
+            // `.html` on disk the audited artifact: what the user opens in the
+            // explorer (READ-31) is exactly what the iframe runs. It replaced a
+            // check that only caught a top-level `<script>` — harmless while
+            // the sandbox forbade scripts, and a hole the moment it stopped.
+            let block = sanitize::strip_scripts(&block);
+            if block.trim().is_empty() {
                 continue;
             }
             blocks.push(rewrite_images(
@@ -110,7 +117,10 @@ pub struct EpubHtml {
 
 /// The inner markup of `<body>`, or the whole document when there is no body
 /// tag - some exporters ship fragments.
-fn body_of(xhtml: &str) -> &str {
+///
+/// `pub(crate)` for read-aloud: the page it receives is the assembled document,
+/// head included, and speaking starts by throwing that away.
+pub(crate) fn body_of(xhtml: &str) -> &str {
     let lower = xhtml.to_ascii_lowercase();
     let Some(open) = lower.find("<body") else {
         return xhtml;

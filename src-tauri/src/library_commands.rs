@@ -8,15 +8,21 @@ use chrono::Utc;
 use rusqlite::{params, Connection};
 use serde::Serialize;
 use std::fs::File;
-use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 use tauri::{AppHandle, Manager, State};
 use uuid::Uuid;
 
-/// The five formats the library accepts. `.kfx` is deliberately absent: no open
-/// library reads it reliably, so importing one would produce a book that the
-/// reader can never open.
-pub const SUPPORTED_BOOK_EXTENSIONS: [&str; 5] = ["pdf", "epub", "mobi", "azw", "azw3"];
+/// The only format the library accepts.
+///
+/// It used to be five (`pdf`, `epub`, `mobi`, `azw`, `azw3`). The reader is
+/// built around EPUB - `epub-fidelity` renders the book's own HTML, CSS and
+/// fonts - and the other four arrived at the reader as flat text, which is the
+/// experience that feature exists to replace. Narrowed on 2026-09-08.
+///
+/// **Books already imported are untouched.** Nothing on the open/read/migrate
+/// path asks this list: `migrate_layout` works from database rows, and a PDF
+/// imported before still opens and still reprocesses.
+pub const SUPPORTED_BOOK_EXTENSIONS: [&str; 1] = ["epub"];
 
 pub fn is_supported_book(path: &Path) -> bool {
     SUPPORTED_BOOK_EXTENSIONS.contains(&extension_of(path).as_str())
@@ -31,9 +37,8 @@ pub fn is_supported_book(path: &Path) -> bool {
 pub fn has_drm(path: &Path) -> Result<bool, String> {
     match extension_of(path).as_str() {
         "epub" => epub_has_drm(path),
-        "mobi" | "azw" | "azw3" => palmdb_has_drm(path),
-        // PDF encryption is out of scope for this feature; saying "clean" here
-        // is a scope decision, not a measurement.
+        // Unreachable through the importer, which accepts nothing else. Kept as
+        // a total match rather than a panic: `has_drm` is public.
         _ => Ok(false),
     }
 }
@@ -43,41 +48,6 @@ fn read_error(path: &Path, e: impl std::fmt::Display) -> String {
         "não foi possível ler {} para verificar a proteção: {e}",
         path.file_name().unwrap_or_default().to_string_lossy()
     )
-}
-
-/// PalmDB (`.mobi`, `.azw`, `.azw3`): the record info list starts at byte 78 and
-/// each entry is 8 bytes, the first 4 holding the record's absolute offset in
-/// the file. Record 0 is the PalmDOC header, whose bytes 12..14 are the
-/// encryption type as a big-endian u16 — 0 none, 1 legacy, 2 Mobipocket DRM.
-/// Anything non-zero is a refusal (LIB-05).
-fn palmdb_has_drm(path: &Path) -> Result<bool, String> {
-    let mut file = File::open(path).map_err(|e| read_error(path, e))?;
-
-    let mut offset = [0u8; 4];
-    file.seek(SeekFrom::Start(78))
-        .map_err(|e| read_error(path, e))?;
-    file.read_exact(&mut offset)
-        .map_err(|e| read_error(path, e))?;
-
-    // Measured while writing the tests: a file of 86 zero bytes reads its
-    // record-0 offset as 0, and reading "bytes 12..14 of record 0" would land
-    // inside the fixed 78-byte header — all zeros, i.e. a false "clean file".
-    // A record cannot start inside the header, so that is a broken file.
-    let record0 = u32::from_be_bytes(offset) as u64;
-    if record0 < 78 {
-        return Err(read_error(
-            path,
-            "cabeçalho PalmDB inválido: o registro 0 aponta para dentro do cabeçalho",
-        ));
-    }
-
-    let mut encryption = [0u8; 2];
-    file.seek(SeekFrom::Start(record0 + 12))
-        .map_err(|e| read_error(path, e))?;
-    file.read_exact(&mut encryption)
-        .map_err(|e| read_error(path, e))?;
-
-    Ok(u16::from_be_bytes(encryption) != 0)
 }
 
 /// EPUB is a zip; `META-INF/encryption.xml` is the DRM marker (LIB-06). An
@@ -198,7 +168,7 @@ fn import_all(conn: &Connection, dir: &Path, paths: Vec<String>) -> ImportBooksR
         };
 
         if !is_supported_book(&source) {
-            reject("formato não suportado. Aceitos: PDF, EPUB, MOBI, AZW, AZW3".to_string());
+            reject("formato não suportado. Aceito: EPUB".to_string());
             continue;
         }
         // No size limit on purpose: without RAG an import is a single
@@ -487,20 +457,6 @@ mod tests {
         dir
     }
 
-    /// A minimal PalmDB: 78-byte header, one record info entry pointing at
-    /// record 0, and a record 0 long enough to carry the encryption field.
-    fn palmdb(path: &Path, encryption: u16) {
-        let record0_offset: u32 = 78 + 8;
-        let mut bytes = vec![0u8; 78];
-        bytes[76..78].copy_from_slice(&1u16.to_be_bytes()); // numRecords
-        bytes.extend_from_slice(&record0_offset.to_be_bytes());
-        bytes.extend_from_slice(&[0u8; 4]); // attributes + uniqueID
-        let mut record0 = vec![0u8; 16];
-        record0[12..14].copy_from_slice(&encryption.to_be_bytes());
-        bytes.extend_from_slice(&record0);
-        std::fs::write(path, bytes).unwrap();
-    }
-
     fn epub(path: &Path, entries: &[&str]) {
         let file = File::create(path).unwrap();
         let mut writer = zip::ZipWriter::new(file);
@@ -513,65 +469,24 @@ mod tests {
     }
 
     #[test]
-    fn the_five_book_formats_are_accepted() {
-        for name in ["a.pdf", "a.epub", "a.mobi", "a.azw", "a.azw3", "A.EPUB"] {
+    fn epub_is_accepted_whatever_the_case_of_its_extension() {
+        for name in ["a.epub", "A.EPUB", "a.EpUb"] {
             assert!(is_supported_book(Path::new(name)), "recusou {name}");
         }
     }
 
     #[test]
-    fn other_formats_are_refused() {
-        // .docx is accepted by the RAG importer and must NOT leak into the
-        // library; .kfx is refused on purpose (no reader can open it).
-        for name in ["a.docx", "a.kfx", "a.txt", "a.md", "no-extension"] {
+    fn every_other_format_is_refused_including_the_four_that_used_to_pass() {
+        // `pdf`, `mobi`, `azw` and `azw3` were accepted until 2026-09-08; the
+        // reader is built around EPUB and they arrived as flat text. `.docx` is
+        // accepted by the RAG importer and must not leak in here; `.kfx` never
+        // was, because no open library reads it.
+        for name in [
+            "a.pdf", "a.mobi", "a.azw", "a.azw3", "a.docx", "a.kfx", "a.txt", "a.md",
+            "no-extension",
+        ] {
             assert!(!is_supported_book(Path::new(name)), "aceitou {name}");
         }
-    }
-
-    #[test]
-    fn a_palmdb_without_encryption_passes() {
-        let path = temp_dir("clean").join("livro.mobi");
-        palmdb(&path, 0);
-        assert_eq!(has_drm(&path), Ok(false));
-    }
-
-    #[test]
-    fn a_palmdb_with_a_non_zero_encryption_field_is_refused() {
-        // 1 = legacy Mobipocket encryption, 2 = Mobipocket DRM. Both refuse.
-        for (encryption, ext) in [(1u16, "azw"), (2u16, "azw3")] {
-            let path = temp_dir("drm").join(format!("livro-{encryption}.{ext}"));
-            palmdb(&path, encryption);
-            assert_eq!(has_drm(&path), Ok(true), "campo {encryption} passou");
-        }
-    }
-
-    #[test]
-    fn a_truncated_palmdb_is_a_read_error_not_a_clean_file() {
-        // The dangerous inverse: a file that cannot be inspected must never be
-        // reported as DRM-free (LIB-05.3).
-        let dir = temp_dir("truncated");
-        let short = dir.join("cortado.mobi");
-        std::fs::write(&short, vec![0u8; 40]).unwrap();
-        assert!(has_drm(&short).is_err(), "header curto virou 'sem DRM'");
-
-        // 86 zero bytes: long enough to read the record-0 offset, which comes
-        // out as 0. The first version of this function seeked to 0+12 and read
-        // header padding as the encryption field, returning Ok(false) — a
-        // corrupt file reported as clean. This assertion is why the guard
-        // exists.
-        let zeroed = dir.join("sem-registro.azw");
-        std::fs::write(&zeroed, vec![0u8; 86]).unwrap();
-        assert!(has_drm(&zeroed).is_err(), "registro 0 inválido virou 'sem DRM'");
-
-        // Offset points past the end of the file: only the read can catch it.
-        let mut past_eof = vec![0u8; 86];
-        past_eof[78..82].copy_from_slice(&4096u32.to_be_bytes());
-        let headless = dir.join("registro-fora.azw3");
-        std::fs::write(&headless, past_eof).unwrap();
-        assert!(has_drm(&headless).is_err(), "registro 0 ausente virou 'sem DRM'");
-
-        let missing = dir.join("nao-existe.azw3");
-        assert!(has_drm(&missing).is_err());
     }
 
     #[test]
@@ -686,33 +601,32 @@ mod tests {
         let conn = migrated();
         let dir = empty_dir("collision");
         let source_dir = empty_dir("collision-src");
-        let first = source_dir.join("livro.pdf");
-        std::fs::write(&first, b"primeiro").unwrap();
+        let first = source_dir.join("livro.epub");
+        epub(&first, &["mimetype", "META-INF/container.xml"]);
 
         let result = import_all(
             &conn,
             &dir,
             vec![first.to_string_lossy().to_string()],
         );
-        assert_eq!(result.imported.len(), 1);
+        assert_eq!(result.imported.len(), 1, "{:?}", result.rejected);
 
-        std::fs::write(&first, b"segundo").unwrap();
+        // The same name, different bytes: the second archive carries one more
+        // entry, which is what makes the byte comparison below meaningful.
+        epub(&first, &["mimetype", "META-INF/container.xml", "OEBPS/content.opf"]);
         let result = import_all(
             &conn,
             &dir,
             vec![first.to_string_lossy().to_string()],
         );
-        assert_eq!(result.imported.len(), 1);
-        assert_eq!(result.imported[0].filename, "livro.pdf");
+        assert_eq!(result.imported.len(), 1, "{:?}", result.rejected);
+        assert_eq!(result.imported[0].filename, "livro.epub");
         assert_eq!(folder_of(&conn, &result.imported[0].id).as_deref(), Some("livro (2)"));
 
-        assert_eq!(
-            std::fs::read(dir.join("livro").join("livro.pdf")).unwrap(),
-            b"primeiro"
-        );
-        assert_eq!(
-            std::fs::read(dir.join("livro (2)").join("livro.pdf")).unwrap(),
-            b"segundo"
+        assert_ne!(
+            std::fs::read(dir.join("livro").join("livro.epub")).unwrap(),
+            std::fs::read(dir.join("livro (2)").join("livro.epub")).unwrap(),
+            "o segundo import sobrescreveu os bytes do primeiro"
         );
 
         // Two rows with the same file name is now normal and no longer
@@ -722,7 +636,7 @@ mod tests {
             .into_iter()
             .map(|b| b.filename)
             .collect();
-        assert_eq!(names, vec!["livro.pdf", "livro.pdf"], "{names:?}");
+        assert_eq!(names, vec!["livro.epub", "livro.epub"], "{names:?}");
     }
 
     #[test]
@@ -759,7 +673,10 @@ mod tests {
     fn a_mixed_selection_keeps_the_valid_files_and_names_the_refused_ones() {
         // LIB-03: each file judged on its own. One valid EPUB, one .docx that
         // the RAG importer accepts but the library must not, and one DRM'd
-        // MOBI. Only the first is imported, and the other two come back named.
+        // EPUB. Only the first is imported, and the other two come back named.
+        // The refused one used to be a MOBI; since 2026-09-08 a MOBI never
+        // reaches the DRM check at all, so proving LIB-05 needs a protected
+        // file in the one format that does.
         let conn = migrated();
         let dir = empty_dir("mixed");
         let src = empty_dir("mixed-src");
@@ -768,8 +685,11 @@ mod tests {
         epub(&good, &["mimetype", "META-INF/container.xml"]);
         let wrong_format = src.join("texto.docx");
         std::fs::write(&wrong_format, b"conteudo").unwrap();
-        let protected = src.join("protegido.mobi");
-        palmdb(&protected, 2);
+        let protected = src.join("protegido.epub");
+        epub(
+            &protected,
+            &["mimetype", "META-INF/container.xml", "META-INF/encryption.xml"],
+        );
 
         let result = import_all(
             &conn,
@@ -794,17 +714,6 @@ mod tests {
         assert!(!dir.join("texto").exists());
         assert!(dir.join("bom").join("bom.epub").is_file());
         assert_eq!(select_books(&conn).unwrap().len(), 1);
-    }
-
-    #[test]
-    fn a_pdf_is_never_inspected() {
-        // INCONCLUSIVE AS PROOF OF ANYTHING ABOUT PDF DRM: this fixes the
-        // Out of Scope decision (PDF encryption is not checked in this
-        // feature), not that the file is unprotected. An encrypted PDF passes
-        // here by design.
-        let path = temp_dir("pdf").join("livro.pdf");
-        std::fs::write(&path, b"%PDF-1.7 whatever").unwrap();
-        assert_eq!(has_drm(&path), Ok(false));
     }
 
     #[test]
@@ -834,23 +743,26 @@ mod tests {
 
     #[test]
     fn two_books_that_would_share_a_folder_name_get_a_suffix() {
-        // READ-32.2. `a.pdf` and `a.epub` have the same stem and would both
-        // want the folder `a`. This is the case the design uses to justify
+        // READ-32.2. Two files named `a.epub`, from two different folders,
+        // both want the folder `a`. This is the case the design uses to justify
         // storing the folder name instead of deriving it from the file name.
+        // It used to be `a.pdf` + `a.epub`; with EPUB the only accepted format,
+        // the clash now comes from two sources rather than two extensions.
         let conn = migrated();
         let dir = empty_dir("folder-clash");
-        let src = empty_dir("folder-clash-src");
-        let pdf = src.join("a.pdf");
-        std::fs::write(&pdf, b"pdf").unwrap();
-        let ep = src.join("a.epub");
-        epub(&ep, &["mimetype", "META-INF/container.xml"]);
+        let first_src = empty_dir("folder-clash-src-1");
+        let second_src = empty_dir("folder-clash-src-2");
+        let first = first_src.join("a.epub");
+        epub(&first, &["mimetype", "META-INF/container.xml"]);
+        let second = second_src.join("a.epub");
+        epub(&second, &["mimetype", "OEBPS/content.opf"]);
 
         let result = import_all(
             &conn,
             &dir,
             vec![
-                pdf.to_string_lossy().to_string(),
-                ep.to_string_lossy().to_string(),
+                first.to_string_lossy().to_string(),
+                second.to_string_lossy().to_string(),
             ],
         );
         assert_eq!(result.imported.len(), 2, "{:?}", result.rejected);
@@ -864,9 +776,15 @@ mod tests {
             folders,
             vec![Some("a".to_string()), Some("a (2)".to_string())]
         );
-        assert!(dir.join("a").join("a.pdf").is_file());
+        assert!(dir.join("a").join("a.epub").is_file());
         assert!(dir.join("a (2)").join("a.epub").is_file());
-        assert_eq!(std::fs::read(dir.join("a").join("a.pdf")).unwrap(), b"pdf");
+        // The two files are different archives, so this also proves the second
+        // import did not overwrite the first.
+        assert_ne!(
+            std::fs::read(dir.join("a").join("a.epub")).unwrap(),
+            std::fs::read(dir.join("a (2)").join("a.epub")).unwrap(),
+            "o segundo livro sobrescreveu o primeiro"
+        );
     }
 
     #[test]

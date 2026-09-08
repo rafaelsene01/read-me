@@ -28,6 +28,28 @@
       "linux": { "name": "onnxruntime-linux-x64-1.28.0.tgz" }
     }
   },
+  "piper": {
+    "_comment": [
+      "Text-to-speech for read-aloud (TTS-01). This is the ARCHIVED MIT build of",
+      "rhasspy/piper, chosen over the live OHF-Voice/piper1-gpl for two measured",
+      "reasons: the live project publishes only Python wheels (34.119.688 bytes,",
+      "no executable), and it is GPL-3.0 because it embeds espeak-ng. This one is",
+      "a native binary that fits the vendoring already here, and it is MIT.",
+      "Frozen since Nov 2023: no fix will come. The escape hatch is that a voice",
+      "is .onnx + .json - data - so replacing the engine later does not",
+      "invalidate what a user already downloaded.",
+      "Sizes read from the GitHub API on 2026-09-07.",
+      "The VOICES are not here on purpose: they are models, downloaded on demand",
+      "(SELF-10 keeps components out of the network, and models have always been",
+      "the other category)."
+    ],
+    "repo": "rhasspy/piper",
+    "tag": "2023.11.14-2",
+    "assets": {
+      "win32": { "name": "piper_windows_amd64.zip", "bytes": 22477236 },
+      "linux": { "name": "piper_linux_x86_64.tar.gz", "bytes": 26460462 }
+    }
+  },
   "pdfium": {
     "repo": "bblanchon/pdfium-binaries",
     "tag": "chromium/7961",

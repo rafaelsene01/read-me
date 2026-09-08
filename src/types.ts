@@ -200,6 +200,38 @@ export interface BookPage {
   format: string;
 }
 
+/** Mirrors `VoiceInfo` in tts_commands.rs — one line of the voice catalog. */
+export interface VoiceInfo {
+  id: string;
+  /** The manifest's code: `pt_BR`, `en_US`. */
+  language: string;
+  /** `Portuguese (Brazil)` — for a list a person reads. */
+  language_name: string;
+  display_name: string;
+  quality: string;
+  /** `piper` or `kokoro` — the two cost very different things to install. */
+  engine: string;
+  /** `0` means not measured yet: show "desconhecido", never "grátis". */
+  download_bytes: number;
+  installed: boolean;
+}
+
+/** Mirrors `TtsSettings` in tts_commands.rs — what the reader was told to
+ *  use. The voice is per language, because a book in English and a book in
+ *  Portuguese are read by different voices. */
+export interface TtsSettings {
+  voices: Record<string, string>;
+  speed: number;
+}
+
+/** Mirrors `UtteranceInfo` in tts_commands.rs — one sentence to speak, and
+ *  where it sits on the page so the mark can move. */
+export interface Utterance {
+  block: number;
+  sentence: number;
+  text: string;
+}
+
 /** Mirrors `ReadingEntry` in reader_commands.rs — one line of the reading
  *  history (HIST-02). `last_page` is zero-based and already clamped. */
 export interface ReadingEntry {

@@ -16,6 +16,18 @@ use tauri::AppHandle;
 /// Still `async` because the whole document pipeline calls it that way, and
 /// changing every caller to save one `await` would be noise.
 pub async fn ensure_dylib(app: &AppHandle) -> Result<PathBuf, String> {
+    ensure_dylib_blocking(app)
+}
+
+/// The same work without the `async`, for callers that are not part of the
+/// document pipeline - the voice synthesis loads its own ONNX graph and has no
+/// async context to borrow.
+///
+/// This is not an optimisation: `speak_sentence` never called anything here, so
+/// which `onnxruntime.dll` got loaded depended on the OS search path, and this
+/// tree ships two of them (1.28.0 under `resources/onnxruntime`, and piper's
+/// own from 2023). Pointing at the resolved one is what makes it a choice.
+pub fn ensure_dylib_blocking(app: &AppHandle) -> Result<PathBuf, String> {
     let dylib = bundled::onnxruntime_dylib(app)?;
     set_dylib_path(&dylib);
     Ok(dylib)

@@ -61,6 +61,14 @@ docx-rs = "0.4"
 # same public key tauri-plugin-updater uses for the installers, so both update
 # paths share one trust root. Zero dependencies of its own.
 minisign-verify = "0.2"
+# Loading espeak-ng at runtime from our own bundle (read-aloud, TTS-38). Already
+# in the tree via `ort`'s load-dynamic; declared here because depending on
+# someone else's dependency breaks on their next bump.
+libloading = "0.7"
+# Kokoro runs on the ONNX Runtime the app already loads for embeddings. Declared
+# with `load-dynamic` to match what `fastembed` resolves, so there is ONE runtime
+# in the process - two would not coexist (TTS-39).
+ort = { version = "2.0.0-rc.12", default-features = false, features = ["load-dynamic", "ndarray"] }
 
 # Job objects, for killing the llama.cpp sidecar when this process dies by any
 # means (M7.1). Already in the tree transitively via Tauri, but declared here on

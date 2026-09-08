@@ -1,4 +1,4 @@
-// SPEC: self-contained-runtime (SELF-01)
+// SPEC: self-contained-runtime (SELF-01), read-aloud (TTS-20, TTS-22, TTS-32)
 
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -6,8 +6,11 @@ import { ArrowLeft } from "lucide-react";
 import { useUiStore } from "../../store/uiStore";
 import { RuntimeCard } from "./RuntimeCard";
 import { ModelsList } from "./ModelsList";
+import { VoicesList } from "./VoicesList";
 
-type Tab = "runtime" | "models";
+// Voices live here, and not in Settings, because a voice **is** a model:
+// same catalog shape, same download, same folder next to the GGUF.
+type Tab = "runtime" | "models" | "voices";
 
 export function RuntimePanel() {
   const { t } = useTranslation();
@@ -28,7 +31,7 @@ export function RuntimePanel() {
       </div>
 
       <div className="flex gap-1 border-b border-[var(--border-color)] px-6 pt-3">
-        {(["runtime", "models"] as const).map((tabOption) => (
+        {(["runtime", "models", "voices"] as const).map((tabOption) => (
           <button
             key={tabOption}
             onClick={() => setTab(tabOption)}
@@ -38,13 +41,13 @@ export function RuntimePanel() {
                 : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
             }`}
           >
-            {t(tabOption === "runtime" ? "runtime.tabRuntime" : "runtime.tabModels")}
+            {t(`runtime.tab${tabOption[0].toUpperCase()}${tabOption.slice(1)}`)}
           </button>
         ))}
       </div>
 
       <div className="mx-auto w-full max-w-2xl px-6 py-6">
-        {tab === "runtime" ? <RuntimeCard /> : <ModelsList />}
+        {tab === "runtime" ? <RuntimeCard /> : tab === "models" ? <ModelsList /> : <VoicesList />}
       </div>
     </div>
   );
