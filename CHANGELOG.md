@@ -4,6 +4,14 @@ Todas as mudanças relevantes deste projeto são registradas aqui.
 O formato segue [Conventional Commits](https://www.conventionalcommits.org/)
 e o versionamento segue [SemVer](https://semver.org/lang/pt-BR/).
 
+## [1.0.0] - 2026-09-08
+
+### Novidades
+
+- Implement book reader feature with translation and pagination
+- Enhance book reading experience with image extraction and improved testing
+- Restrict book import to EPUB format and enhance read-aloud functionality
+
 ## [0.0.2] - 2026-09-05
 
 ### Correções
