@@ -4,6 +4,12 @@ Todas as mudanças relevantes deste projeto são registradas aqui.
 O formato segue [Conventional Commits](https://www.conventionalcommits.org/)
 e o versionamento segue [SemVer](https://semver.org/lang/pt-BR/).
 
+## [1.0.1] - 2026-09-13
+
+### Novidades
+
+- Update sidebar layout and enhance reading history management
+
 ## [1.0.0] - 2026-09-08
 
 ### Novidades
