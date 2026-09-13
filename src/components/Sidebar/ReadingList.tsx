@@ -1,4 +1,5 @@
-// SPEC: reading-history (HIST-01, HIST-02, HIST-03, HIST-06, HIST-09), book-reader (READ-16)
+// SPEC: reading-history (HIST-01, HIST-02, HIST-03, HIST-06, HIST-09, HIST-10, HIST-11),
+//       book-reader (READ-16)
 
 import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -10,7 +11,7 @@ import type { ReadingEntry } from "../../types";
 export function ReadingList() {
   const { t } = useTranslation();
   const [entries, setEntries] = useState<ReadingEntry[]>([]);
-  const openBookId = useReaderStore((s) => s.bookId);
+  const openReadingId = useReaderStore((s) => s.readingId);
   const openBook = useReaderStore((s) => s.openBook);
   const closeBook = useReaderStore((s) => s.closeBook);
 
@@ -23,7 +24,9 @@ export function ReadingList() {
     });
   }, []);
 
-  useEffect(load, [load]);
+  // Reloaded whenever the open reading changes: "Ler" in the Library creates
+  // an entry this list never clicked, and it has to show up (HIST-10).
+  useEffect(load, [load, openReadingId]);
 
   async function handleRemove(entry: ReadingEntry) {
     // HIST-09: the position is lost, so the question says it instead of the row
@@ -32,7 +35,7 @@ export function ReadingList() {
     if (!window.confirm(t("reader.historyRemoveConfirm", { name: entry.filename }))) return;
     // Closing without the flush first: the pending debounce of the book being
     // read would write the position straight back after it was cleared.
-    if (entry.id === openBookId) closeBook(false);
+    if (entry.id === openReadingId) closeBook(false);
     try {
       await readerApi.forgetReadingEntry(entry.id);
     } catch {
@@ -46,7 +49,7 @@ export function ReadingList() {
     // No language argument: a history row does not carry the reading language,
     // and the store resolves it from disk after it has already switched to the
     // reader - so the click paints immediately.
-    await openBook(entry.id);
+    await openBook(entry.book_id, undefined, entry.id);
     load();
   }
 
@@ -67,7 +70,7 @@ export function ReadingList() {
                   the Library rows use. */}
               <div
                 className={`flex items-center rounded-md pr-1 hover:bg-[var(--bg-elevated)] ${
-                  entry.id === openBookId ? "bg-[var(--bg-elevated)]" : ""
+                  entry.id === openReadingId ? "bg-[var(--bg-elevated)]" : ""
                 }`}
               >
                 <button

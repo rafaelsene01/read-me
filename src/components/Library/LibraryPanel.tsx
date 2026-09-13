@@ -1,10 +1,11 @@
-// SPEC: book-library (LIB-01, LIB-03, LIB-04, LIB-09, LIB-10, LIB-11, LIB-12),
+// SPEC: book-library (LIB-01, LIB-03, LIB-04, LIB-09, LIB-10, LIB-11),
 //       book-reader (READ-02, READ-04, READ-05, READ-06)
+// LIB-12 (show absolute path in UI) revoked by AD-066 — path text removed from the header.
 
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { open } from "@tauri-apps/plugin-dialog";
-import { openPath } from "@tauri-apps/plugin-opener";
+import { libraryApi } from "../../lib/libraryApi";
 import { ArrowLeft, FolderOpen, Upload } from "lucide-react";
 import { useUiStore } from "../../store/uiStore";
 import { useLibraryStore } from "../../store/libraryStore";
@@ -78,10 +79,7 @@ export function LibraryPanel() {
           <ArrowLeft size={18} />
         </button>
         <h1 className="text-base font-semibold">{t("library.title")}</h1>
-      </div>
-
-      <div className="mx-auto w-full max-w-2xl px-6 py-6">
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="ml-auto flex items-center gap-2">
           <button
             onClick={handleImport}
             disabled={isImporting}
@@ -91,23 +89,23 @@ export function LibraryPanel() {
             {isImporting ? t("library.importing") : t("library.import")}
           </button>
           <button
-            onClick={() => libraryPath && openPath(libraryPath)}
+            // A refusal lands in the banner: the old `openPath` call had no
+            // catch, which is why the broken button said nothing (AD-069).
+            onClick={() =>
+              libraryApi
+                .openLibraryFolder()
+                .catch((e) => useLibraryStore.setState({ error: String(e) }))
+            }
             disabled={!libraryPath}
             className="flex items-center gap-1.5 rounded-md border border-[var(--border-color)] px-3 py-1.5 text-sm hover:bg-[var(--bg-elevated)] disabled:opacity-50"
           >
             <FolderOpen size={14} />
             {t("library.openFolder")}
           </button>
-          {/* The absolute path sits next to the button, not behind a click (LIB-12). */}
-          {libraryPath && (
-            <span className="min-w-0 truncate text-xs text-[var(--text-secondary)]" title={libraryPath}>
-              {libraryPath}
-            </span>
-          )}
         </div>
+      </div>
 
-        <p className="mt-1 text-xs text-[var(--text-secondary)]">{t("library.supportedFormats")}</p>
-
+      <div className="mx-auto w-full max-w-2xl px-6 py-6">
         {/* A whole-command failure (unconfigured storage, LIB-04) must be read, not swallowed. */}
         {error && <p className="mt-3 text-xs text-red-500">{error}</p>}
 

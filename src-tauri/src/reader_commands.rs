@@ -2,7 +2,8 @@
 //       READ-17, READ-20, READ-21, READ-26, READ-27, READ-28, READ-29, READ-30),
 //       reading-history (HIST-02, HIST-04, HIST-05, HIST-06, HIST-07, HIST-09),
 //       book-illustrations (ILLUS-03, ILLUS-07, ILLUS-09, ILLUS-10),
-//       epub-fidelity (FID-01, FID-02, FID-03, FID-05, FID-09, FID-11, FID-12)
+//       epub-fidelity (FID-01, FID-02, FID-03, FID-05, FID-09, FID-11, FID-12, FID-13),
+//       book-library (LIB-13)
 
 //! Turning an imported book into pages on disk.
 //!
@@ -183,7 +184,7 @@ fn extract(file: &Path) -> Result<Extracted, String> {
         // text beats a book that does not open.
         "epub" => match epub::extract_epub_html(file) {
             Ok(book) => Ok(Extracted {
-                pages: html::paginate_blocks(&book.blocks),
+                pages: html::paginate_chapters(&book.chapters),
                 images: book.images,
                 css: book.css,
                 format: "html",
@@ -322,8 +323,16 @@ pub(crate) fn process_into_pages(
     // `last_page`, and a position saved against the old pagination is clamped
     // to the new last page instead of pointing past the end (READ-13).
     conn.execute(
-        "UPDATE books SET page_count = ?1, last_page = MIN(last_page, ?2) WHERE id = ?3",
-        params![page_count, page_count - 1, book_id],
+        "UPDATE books SET page_count = ?1 WHERE id = ?2",
+        params![page_count, book_id],
+    )
+    .map_err(|e| fail(conn, book_id, e.to_string(), emit))?;
+    // Every reading of the book, not one: since HIST-11 a book can be in the
+    // history more than once, and each position has to stop pointing past the
+    // new end.
+    conn.execute(
+        "UPDATE readings SET last_page = MIN(last_page, ?1) WHERE book_id = ?2",
+        params![page_count - 1, book_id],
     )
     .map_err(|e| fail(conn, book_id, e.to_string(), emit))?;
 
@@ -551,7 +560,10 @@ pub struct BookPage {
 /// One line of the sidebar's reading history (HIST-02).
 #[derive(Debug, Clone, Serialize)]
 pub struct ReadingEntry {
+    /// The reading's id. Not the book's: one book can have several readings
+    /// in the history (HIST-11).
     pub id: String,
+    pub book_id: String,
     pub filename: String,
     pub page_count: u32,
     /// Zero-based and already clamped, so the sidebar never renders a
@@ -566,32 +578,52 @@ fn clamp_position(page: u32, page_count: u32) -> u32 {
     page.min(page_count.saturating_sub(1))
 }
 
-/// Records the opening and hands back where to resume (HIST-04, HIST-06).
+/// A new reading of a book, at the first page, and its id (HIST-10).
+///
+/// Always a new row, never the existing one: "Ler" in the Library means
+/// "start this book again", and the readings already in the history keep
+/// their own positions (HIST-11).
+pub(crate) fn start_reading_row(conn: &Connection, book_id: &str) -> Result<String, String> {
+    // Checked here and not left to the foreign key: the error has to name the
+    // book, and a connection without `foreign_keys = ON` would accept an orphan.
+    conn.query_row("SELECT 1 FROM books WHERE id = ?1", params![book_id], |_| Ok(()))
+        .optional()
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "Livro não encontrado".to_string())?;
+    let id = uuid::Uuid::new_v4().to_string();
+    conn.execute(
+        "INSERT INTO readings (id, book_id, last_page, last_opened_at) VALUES (?1, ?2, 0, ?3)",
+        params![id, book_id, Utc::now().to_rfc3339()],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(id)
+}
+
+/// Records the opening of a reading and hands back where to resume (HIST-04,
+/// HIST-06).
 ///
 /// The clamp is applied to what is returned and not written back: the row is
-/// already clamped on every reprocess (READ-13), and opening a book must not
-/// be a write that moves the user's saved position on its own.
-pub(crate) fn open_position(conn: &Connection, book_id: &str) -> Result<u32, String> {
+/// already clamped on every reprocess (READ-13), and opening must not be a
+/// write that moves the user's saved position on its own.
+pub(crate) fn open_position(conn: &Connection, reading_id: &str) -> Result<u32, String> {
     let updated = conn
         .execute(
-            "UPDATE books SET last_opened_at = ?1 WHERE id = ?2",
-            params![Utc::now().to_rfc3339(), book_id],
+            "UPDATE readings SET last_opened_at = ?1 WHERE id = ?2",
+            params![Utc::now().to_rfc3339(), reading_id],
         )
         .map_err(|e| e.to_string())?;
     if updated == 0 {
-        return Err("Livro não encontrado".to_string());
+        return Err("Leitura não encontrada".to_string());
     }
-    let (last_page, page_count): (Option<u32>, u32) = conn
+    let (last_page, page_count): (u32, u32) = conn
         .query_row(
-            "SELECT last_page, page_count FROM books WHERE id = ?1",
-            params![book_id],
+            "SELECT r.last_page, b.page_count FROM readings r JOIN books b ON b.id = r.book_id
+             WHERE r.id = ?1",
+            params![reading_id],
             |row| Ok((row.get(0)?, row.get(1)?)),
         )
         .map_err(|e| e.to_string())?;
-    // NULL is "never opened", which is page 0. The column stays NULL until a
-    // position is actually saved, because what tells the history a book was
-    // read is `last_opened_at`, not `last_page` (HIST-07).
-    Ok(clamp_position(last_page.unwrap_or(0), page_count))
+    Ok(clamp_position(last_page, page_count))
 }
 
 /// Persists the current page (HIST-05, READ-17).
@@ -600,15 +632,17 @@ pub(crate) fn open_position(conn: &Connection, book_id: &str) -> Result<u32, Str
 /// `MAX` here cost one statement instead of a round trip for `page_count`, and
 /// `MAX(page_count - 1, 0)` keeps a book with no pages yet at 0 instead of at
 /// -1.
-pub(crate) fn save_position(conn: &Connection, book_id: &str, page: u32) -> Result<(), String> {
+pub(crate) fn save_position(conn: &Connection, reading_id: &str, page: u32) -> Result<(), String> {
     let updated = conn
         .execute(
-            "UPDATE books SET last_page = MIN(?1, MAX(page_count - 1, 0)) WHERE id = ?2",
-            params![page, book_id],
+            "UPDATE readings SET last_page = MIN(?1, MAX(
+                (SELECT page_count FROM books WHERE books.id = readings.book_id) - 1, 0))
+             WHERE id = ?2",
+            params![page, reading_id],
         )
         .map_err(|e| e.to_string())?;
     if updated == 0 {
-        return Err("Livro não encontrado".to_string());
+        return Err("Leitura não encontrada".to_string());
     }
     Ok(())
 }
@@ -782,28 +816,31 @@ fn base64(bytes: &[u8]) -> String {
     out
 }
 
-/// The books opened at least once, most recently opened first (HIST-02).
+/// Every reading, most recently opened first (HIST-02, HIST-11).
 ///
-/// `WHERE last_opened_at IS NOT NULL` is what separates "imported" from
-/// "read": the Library lists everything, the history lists only what the user
-/// actually opened.
+/// A book imported and never read has no row in `readings`, which is what
+/// separates "imported" from "read": the Library lists everything, the history
+/// lists only what the user actually opened. The `rowid` tiebreak keeps two
+/// readings opened in the same instant in a stable order - newest row first.
 pub(crate) fn reading_history(conn: &Connection) -> Result<Vec<ReadingEntry>, String> {
     let mut stmt = conn
         .prepare(
-            "SELECT id, filename, page_count, COALESCE(last_page, 0), last_opened_at
-             FROM books WHERE last_opened_at IS NOT NULL ORDER BY last_opened_at DESC",
+            "SELECT r.id, r.book_id, b.filename, b.page_count, r.last_page, r.last_opened_at
+             FROM readings r JOIN books b ON b.id = r.book_id
+             ORDER BY r.last_opened_at DESC, r.rowid DESC",
         )
         .map_err(|e| e.to_string())?;
     let entries = stmt
         .query_map([], |row| {
-            let page_count: u32 = row.get(2)?;
-            let last_page: u32 = row.get(3)?;
+            let page_count: u32 = row.get(3)?;
+            let last_page: u32 = row.get(4)?;
             Ok(ReadingEntry {
                 id: row.get(0)?,
-                filename: row.get(1)?,
+                book_id: row.get(1)?,
+                filename: row.get(2)?,
                 page_count,
                 last_page: clamp_position(last_page, page_count),
-                last_opened_at: row.get(4)?,
+                last_opened_at: row.get(5)?,
             })
         })
         .map_err(|e| e.to_string())?
@@ -812,38 +849,43 @@ pub(crate) fn reading_history(conn: &Connection) -> Result<Vec<ReadingEntry>, St
     Ok(entries)
 }
 
-/// Forgets that a book was read: it leaves the history and starts over (HIST-09).
+/// Deletes one reading from the history (HIST-09).
 ///
-/// Both columns go back to NULL in the same statement. `last_opened_at` is
-/// what `reading_history` filters on, so it is what takes the row off the
-/// sidebar; `last_page` goes with it because the user was asked to confirm
-/// losing the position - keeping it would resurrect an old page on the next
-/// open. Nothing on disk is touched: deleting the book itself is
+/// Only that row: the book's other readings keep their positions, and nothing
+/// on disk is touched - deleting the book itself is
 /// `library_commands::remove_book` (HIST-08), a different action.
-pub(crate) fn forget_position(conn: &Connection, book_id: &str) -> Result<(), String> {
-    let updated = conn
-        .execute(
-            "UPDATE books SET last_opened_at = NULL, last_page = NULL WHERE id = ?1",
-            params![book_id],
-        )
+pub(crate) fn forget_position(conn: &Connection, reading_id: &str) -> Result<(), String> {
+    let deleted = conn
+        .execute("DELETE FROM readings WHERE id = ?1", params![reading_id])
         .map_err(|e| e.to_string())?;
-    if updated == 0 {
-        return Err("Livro não encontrado".to_string());
+    if deleted == 0 {
+        return Err("Leitura não encontrada".to_string());
     }
     Ok(())
 }
 
-/// Returns the page to resume at, zero-based.
+/// Starts a new reading of the book at the first page; returns its id (HIST-10).
 #[tauri::command]
-pub fn open_book(db: State<DbState>, book_id: String) -> Result<u32, String> {
+pub fn start_reading(db: State<DbState>, book_id: String) -> Result<String, String> {
     let guard = db.0.lock().map_err(|e| e.to_string())?;
-    open_position(require_conn(&guard)?, &book_id)
+    start_reading_row(require_conn(&guard)?, &book_id)
+}
+
+/// Returns the page to resume the reading at, zero-based.
+#[tauri::command]
+pub fn open_reading(db: State<DbState>, reading_id: String) -> Result<u32, String> {
+    let guard = db.0.lock().map_err(|e| e.to_string())?;
+    open_position(require_conn(&guard)?, &reading_id)
 }
 
 #[tauri::command]
-pub fn save_reading_position(db: State<DbState>, book_id: String, page: u32) -> Result<(), String> {
+pub fn save_reading_position(
+    db: State<DbState>,
+    reading_id: String,
+    page: u32,
+) -> Result<(), String> {
     let guard = db.0.lock().map_err(|e| e.to_string())?;
-    save_position(require_conn(&guard)?, &book_id, page)
+    save_position(require_conn(&guard)?, &reading_id, page)
 }
 
 #[tauri::command]
@@ -890,18 +932,44 @@ pub fn get_book_image(
     Ok(tauri::ipc::Response::new(bytes))
 }
 
+/// The cover of a book as raw bytes, **empty** when it declares none (LIB-13).
+///
+/// Empty and not an error: a book without a cover is ordinary, and the row
+/// shows a placeholder for it. Same transport as `get_book_image`, for the
+/// same reasons.
+///
+/// ponytail: the EPUB is opened once per row every time the Library mounts,
+/// with no copy on disk. Cache the bytes next to `images/` if a large library
+/// measures slow.
+#[tauri::command]
+pub fn get_book_cover(
+    app: AppHandle,
+    db: State<DbState>,
+    book_id: String,
+) -> Result<tauri::ipc::Response, String> {
+    let library = crate::library_commands::library_dir(&app)?;
+    let (file, _) = {
+        let guard = db.0.lock().map_err(|e| e.to_string())?;
+        book_paths(require_conn(&guard)?, &library, &book_id)?
+    };
+    // The lock is released before the zip is read: a list of covers must not
+    // hold the database while it opens every book.
+    let bytes = epub::cover_image(&file).unwrap_or_default();
+    Ok(tauri::ipc::Response::new(bytes))
+}
+
 #[tauri::command]
 pub fn list_reading_history(db: State<DbState>) -> Result<Vec<ReadingEntry>, String> {
     let guard = db.0.lock().map_err(|e| e.to_string())?;
     reading_history(require_conn(&guard)?)
 }
 
-/// Clears the reading position only. The book, its file and every translation
-/// folder stay on disk (HIST-09).
+/// Deletes one reading. The book, its file and every translation folder stay
+/// on disk (HIST-09).
 #[tauri::command]
-pub fn forget_reading_entry(db: State<DbState>, book_id: String) -> Result<(), String> {
+pub fn forget_reading_entry(db: State<DbState>, reading_id: String) -> Result<(), String> {
     let guard = db.0.lock().map_err(|e| e.to_string())?;
-    forget_position(require_conn(&guard)?, &book_id)
+    forget_position(require_conn(&guard)?, &reading_id)
 }
 
 /// One language folder of a book, with what is actually on disk in it.
@@ -1578,20 +1646,23 @@ mod tests {
         write_epub(&dir.join("livro.epub"), 6, 1_000);
         process(&conn, &lib, "b1").unwrap();
 
-        conn.execute("UPDATE books SET last_page = 40 WHERE id = 'b1'", [])
-            .unwrap();
+        // Duas leituras do mesmo livro (HIST-11): as duas têm de ser clampadas.
+        let r1 = start_reading_row(&conn, "b1").unwrap();
+        let r2 = start_reading_row(&conn, "b1").unwrap();
+        conn.execute("UPDATE readings SET last_page = 40", []).unwrap();
         // Um livro bem menor: o mesmo arquivo, com um capítulo de um parágrafo.
         write_epub(&dir.join("livro.epub"), 1, 100);
         let pages = process(&conn, &lib, "b1").unwrap();
 
-        let (_, _, recorded, last_page) = status_of(&conn, "b1");
+        let (_, _, recorded, _) = status_of(&conn, "b1");
         assert_eq!(recorded as u32, pages);
-        assert_eq!(
-            last_page,
-            Some(pages as i64 - 1),
-            "a posição não foi clampada para a última página"
-        );
-        assert_ne!(last_page, Some(40));
+        for reading in [&r1, &r2] {
+            assert_eq!(
+                reading_page(&conn, reading),
+                pages as i64 - 1,
+                "uma leitura não foi clampada para a última página"
+            );
+        }
     }
 
     #[test]
@@ -1604,14 +1675,12 @@ mod tests {
         write_epub(&dir.join("livro.epub"), 1, 100);
         process(&conn, &lib, "b1").unwrap();
 
-        conn.execute("UPDATE books SET last_page = 0 WHERE id = 'b1'", [])
-            .unwrap();
+        let reading = start_reading_row(&conn, "b1").unwrap();
         write_epub(&dir.join("livro.epub"), 6, 1_000);
         let pages = process(&conn, &lib, "b1").unwrap();
 
         assert!(pages > 1);
-        let (_, _, _, last_page) = status_of(&conn, "b1");
-        assert_eq!(last_page, Some(0), "a posição salva se moveu sozinha");
+        assert_eq!(reading_page(&conn, &reading), 0, "a posição salva se moveu sozinha");
     }
 
     #[test]
@@ -1710,18 +1779,28 @@ mod tests {
     /// Grava `last_opened_at` direto, como a `book-library` já faz para
     /// `imported_at`: duas aberturas na mesma execução podem cair no mesmo
     /// instante e a ordenação ficaria indefinida, não DESC.
-    fn opened_at(conn: &Connection, id: &str, when: &str) {
+    fn opened_at(conn: &Connection, reading: &str, when: &str) {
         conn.execute(
-            "UPDATE books SET last_opened_at = ?1 WHERE id = ?2",
-            params![when, id],
+            "UPDATE readings SET last_opened_at = ?1 WHERE id = ?2",
+            params![when, reading],
         )
         .unwrap();
     }
 
-    fn last_opened(conn: &Connection, id: &str) -> Option<String> {
+    fn last_opened(conn: &Connection, reading: &str) -> Option<String> {
         conn.query_row(
-            "SELECT last_opened_at FROM books WHERE id = ?1",
-            params![id],
+            "SELECT last_opened_at FROM readings WHERE id = ?1",
+            params![reading],
+            |row| row.get(0),
+        )
+        .optional()
+        .unwrap()
+    }
+
+    fn reading_page(conn: &Connection, reading: &str) -> i64 {
+        conn.query_row(
+            "SELECT last_page FROM readings WHERE id = ?1",
+            params![reading],
             |row| row.get(0),
         )
         .unwrap()
@@ -1730,34 +1809,36 @@ mod tests {
     #[test]
     fn opening_a_book_records_the_moment_it_was_opened() {
         // HIST-04. O valor exato não é asserção: o teste só pode provar que a
-        // coluna deixou de ser nula e que o que ficou lá é um RFC 3339
-        // relegível. Que o instante seja "agora" na máquina do usuário é fé no
-        // relógio do sistema, e nenhum teste desta suíte prova isso.
+        // coluna foi gravada e que o que ficou lá é um RFC 3339 relegível. Que
+        // o instante seja "agora" na máquina do usuário é fé no relógio do
+        // sistema, e nenhum teste desta suíte prova isso.
         let conn = migrated();
         let lib = library("open-records");
         insert_book(&conn, &lib, "b1", "livro.epub");
-        assert_eq!(last_opened(&conn, "b1"), None, "nasceu já aberto");
+        let reading = start_reading_row(&conn, "b1").unwrap();
+        opened_at(&conn, &reading, "antes");
 
-        open_position(&conn, "b1").unwrap();
+        open_position(&conn, &reading).unwrap();
 
-        let opened = last_opened(&conn, "b1").expect("abrir não gravou last_opened_at");
+        let opened = last_opened(&conn, &reading).expect("a leitura sumiu");
         chrono::DateTime::parse_from_rfc3339(&opened)
             .unwrap_or_else(|e| panic!("last_opened_at não é RFC 3339: {opened:?} ({e})"));
     }
 
     #[test]
     fn a_book_never_opened_starts_at_the_first_page() {
-        // HIST-07. `last_page IS NULL` -> 0, e a coluna continua nula: quem
-        // marca "foi lido" é `last_opened_at`, não uma posição inventada.
+        // HIST-07/HIST-10. Uma leitura nova começa na primeira página, e só
+        // existe depois do "Ler": importar não cria leitura nenhuma.
         let conn = migrated();
         let lib = library("open-first");
         let dir = insert_book(&conn, &lib, "b1", "livro.epub");
         write_epub(&dir.join("livro.epub"), 6, 1_000);
         process(&conn, &lib, "b1").unwrap();
-        assert_eq!(status_of(&conn, "b1").3, None, "posição nasceu preenchida");
+        assert!(reading_history(&conn).unwrap().is_empty(), "processar criou leitura");
 
-        assert_eq!(open_position(&conn, "b1").unwrap(), 0);
-        assert_eq!(status_of(&conn, "b1").3, None, "abrir gravou posição");
+        let reading = start_reading_row(&conn, "b1").unwrap();
+
+        assert_eq!(open_position(&conn, &reading).unwrap(), 0);
     }
 
     #[test]
@@ -1769,28 +1850,30 @@ mod tests {
         write_epub(&dir.join("livro.epub"), 18, 1_000);
         let pages = process(&conn, &lib, "b1").unwrap();
         assert!(pages > 4, "o fixture não tem páginas suficientes: {pages}");
+        let reading = start_reading_row(&conn, "b1").unwrap();
 
-        save_position(&conn, "b1", 4).unwrap();
-        assert_eq!(open_position(&conn, "b1").unwrap(), 4);
+        save_position(&conn, &reading, 4).unwrap();
+        assert_eq!(open_position(&conn, &reading).unwrap(), 4);
     }
 
     #[test]
     fn saving_a_position_persists_it() {
-        // HIST-05/READ-17. A posição vai para a linha, e uma página além do
+        // HIST-05/READ-17. A posição vai para a leitura, e uma página além do
         // fim é clampada na gravação — o número vem do frontend.
         let conn = migrated();
         let lib = library("save-position");
         let dir = insert_book(&conn, &lib, "b1", "livro.epub");
         write_epub(&dir.join("livro.epub"), 18, 1_000);
         let pages = process(&conn, &lib, "b1").unwrap();
+        let reading = start_reading_row(&conn, "b1").unwrap();
 
-        save_position(&conn, "b1", 2).unwrap();
-        assert_eq!(status_of(&conn, "b1").3, Some(2));
+        save_position(&conn, &reading, 2).unwrap();
+        assert_eq!(reading_page(&conn, &reading), 2);
 
-        save_position(&conn, "b1", 999).unwrap();
+        save_position(&conn, &reading, 999).unwrap();
         assert_eq!(
-            status_of(&conn, "b1").3,
-            Some(pages as i64 - 1),
+            reading_page(&conn, &reading),
+            pages as i64 - 1,
             "posição além do fim não foi clampada na gravação"
         );
     }
@@ -1800,46 +1883,72 @@ mod tests {
         // HIST-02.
         let conn = migrated();
         let lib = library("history-order");
+        let mut readings = Vec::new();
         for (id, filename) in [("b1", "um.epub"), ("b2", "dois.epub"), ("b3", "tres.epub")] {
             insert_book(&conn, &lib, id, filename);
-            open_position(&conn, id).unwrap();
+            readings.push(start_reading_row(&conn, id).unwrap());
         }
-        opened_at(&conn, "b1", "2026-02-02T00:00:00+00:00");
-        opened_at(&conn, "b2", "2026-03-03T00:00:00+00:00");
-        opened_at(&conn, "b3", "2026-01-01T00:00:00+00:00");
+        opened_at(&conn, &readings[0], "2026-02-02T00:00:00+00:00");
+        opened_at(&conn, &readings[1], "2026-03-03T00:00:00+00:00");
+        opened_at(&conn, &readings[2], "2026-01-01T00:00:00+00:00");
 
-        let ids: Vec<String> = reading_history(&conn)
+        let books: Vec<String> = reading_history(&conn)
             .unwrap()
             .into_iter()
-            .map(|e| e.id)
+            .map(|e| e.book_id)
             .collect();
-        assert_eq!(ids, vec!["b2", "b1", "b3"]);
+        assert_eq!(books, vec!["b2", "b1", "b3"]);
+    }
+
+    #[test]
+    fn reading_a_book_again_is_a_new_entry_at_the_first_page() {
+        // HIST-10/HIST-11, o pedido: "Ler" de novo abre outra leitura na
+        // página 1, e a anterior continua no histórico com a página dela.
+        let conn = migrated();
+        let lib = library("read-again");
+        translated_book(&conn, &lib, "b1", 10, &[]);
+        let first = start_reading_row(&conn, "b1").unwrap();
+        save_position(&conn, &first, 6).unwrap();
+
+        let second = start_reading_row(&conn, "b1").unwrap();
+
+        assert_ne!(first, second, "reaproveitou a leitura existente");
+        assert_eq!(open_position(&conn, &second).unwrap(), 0);
+        assert_eq!(open_position(&conn, &first).unwrap(), 6, "a leitura antiga perdeu a página");
+        let entries = reading_history(&conn).unwrap();
+        assert_eq!(entries.len(), 2, "{entries:?}");
+        assert!(entries.iter().all(|e| e.book_id == "b1"));
+    }
+
+    #[test]
+    fn starting_a_reading_of_a_book_that_does_not_exist_is_an_error() {
+        let conn = migrated();
+        assert!(start_reading_row(&conn, "nao-existe").is_err());
+        assert!(reading_history(&conn).unwrap().is_empty(), "gravou leitura órfã");
     }
 
     #[test]
     fn deleting_a_history_entry_forgets_the_position_and_keeps_the_book() {
         // HIST-09, AC 2/3/5. O oposto de `removing_a_book_removes_its_whole_folder`:
-        // aqui nada em disco é tocado — só as duas colunas voltam a NULL.
+        // aqui nada em disco é tocado — só a linha da leitura sai.
         let lib = library("forget-entry");
         let conn = migrated();
         let dir = translated_book(&conn, &lib, "b1", 10, &["pt", "en"]);
         let neighbour = translated_book(&conn, &lib, "b2", 4, &[]);
         let files_before = page_files(&dir);
-        for id in ["b1", "b2"] {
-            open_position(&conn, id).unwrap();
-        }
-        save_position(&conn, "b1", 7).unwrap();
-        save_position(&conn, "b2", 2).unwrap();
+        let r1 = start_reading_row(&conn, "b1").unwrap();
+        let r2 = start_reading_row(&conn, "b2").unwrap();
+        save_position(&conn, &r1, 7).unwrap();
+        save_position(&conn, &r2, 2).unwrap();
 
-        forget_position(&conn, "b1").unwrap();
+        forget_position(&conn, &r1).unwrap();
 
-        // AC 2: as duas colunas, não só a que tira do histórico.
-        assert_eq!(last_opened(&conn, "b1"), None);
-        assert_eq!(status_of(&conn, "b1").3, None, "last_page sobreviveu");
+        // AC 2: a leitura some inteira, posição junto.
+        assert_eq!(last_opened(&conn, &r1), None, "a leitura sobreviveu");
         // AC 5: a outra entrada continua no histórico, na posição dela.
         let entries = reading_history(&conn).unwrap();
         assert_eq!(entries.len(), 1, "{entries:?}");
-        assert_eq!(entries[0].id, "b2");
+        assert_eq!(entries[0].id, r2);
         assert_eq!(entries[0].last_page, 2, "a posição do vizinho foi junto");
         // AC 3: o livro continua na Biblioteca, com o arquivo importado e as
         // duas pastas de tradução intactas.
@@ -1858,20 +1967,22 @@ mod tests {
 
     #[test]
     fn a_book_deleted_from_the_history_reopens_at_the_first_page() {
-        // HIST-09, AC 4. Zerar `last_page` junto é o que faz a reabertura cair
-        // na primeira página em vez de ressuscitar a posição antiga.
+        // HIST-09, AC 4. A leitura apagada não reabre; ler o livro de novo é
+        // uma leitura nova, na primeira página, sem ressuscitar a antiga.
         let lib = library("forget-reopen");
         let conn = migrated();
         translated_book(&conn, &lib, "b1", 10, &[]);
-        open_position(&conn, "b1").unwrap();
-        save_position(&conn, "b1", 7).unwrap();
-        assert_eq!(open_position(&conn, "b1").unwrap(), 7);
+        let old = start_reading_row(&conn, "b1").unwrap();
+        save_position(&conn, &old, 7).unwrap();
+        assert_eq!(open_position(&conn, &old).unwrap(), 7);
 
-        forget_position(&conn, "b1").unwrap();
+        forget_position(&conn, &old).unwrap();
 
-        assert_eq!(open_position(&conn, "b1").unwrap(), 0);
-        // Reabrir devolve o livro ao histórico — apagar esquece a posição, não
-        // proíbe o livro.
+        assert!(open_position(&conn, &old).is_err(), "a leitura apagada reabriu");
+        let again = start_reading_row(&conn, "b1").unwrap();
+        assert_eq!(open_position(&conn, &again).unwrap(), 0);
+        // Ler de novo devolve o livro ao histórico — apagar esquece a leitura,
+        // não proíbe o livro.
         assert_eq!(reading_history(&conn).unwrap().len(), 1);
     }
 
@@ -1881,21 +1992,23 @@ mod tests {
         // vira erro em vez de sucesso silencioso.
         let conn = migrated();
         assert!(forget_position(&conn, "nao-existe").is_err());
+        assert!(open_position(&conn, "nao-existe").is_err());
+        assert!(save_position(&conn, "nao-existe", 1).is_err());
     }
 
     #[test]
     fn an_imported_book_never_opened_is_not_in_the_history() {
-        // `WHERE last_opened_at IS NOT NULL`: é o que separa "importado" de
-        // "lido". A Biblioteca lista os dois; a lateral, só o segundo.
+        // Sem linha em `readings`, sem histórico: é o que separa "importado"
+        // de "lido". A Biblioteca lista os dois; a lateral, só o segundo.
         let conn = migrated();
         let lib = library("history-imported");
         insert_book(&conn, &lib, "lido", "lido.epub");
         insert_book(&conn, &lib, "so-importado", "importado.epub");
-        open_position(&conn, "lido").unwrap();
+        start_reading_row(&conn, "lido").unwrap();
 
         let entries = reading_history(&conn).unwrap();
         assert_eq!(entries.len(), 1, "{entries:?}");
-        assert_eq!(entries[0].id, "lido");
+        assert_eq!(entries[0].book_id, "lido");
         assert_eq!(entries[0].filename, "lido.epub");
     }
 
@@ -1910,13 +2023,14 @@ mod tests {
         let dir = insert_book(&conn, &lib, "b1", "livro.epub");
         write_epub(&dir.join("livro.epub"), 6, 1_000);
         let pages = process(&conn, &lib, "b1").unwrap();
+        let reading = start_reading_row(&conn, "b1").unwrap();
         conn.execute(
-            "UPDATE books SET last_page = 40 WHERE id = 'b1'",
-            [],
+            "UPDATE readings SET last_page = 40 WHERE id = ?1",
+            params![reading],
         )
         .unwrap();
 
-        assert_eq!(open_position(&conn, "b1").unwrap(), pages - 1);
+        assert_eq!(open_position(&conn, &reading).unwrap(), pages - 1);
     }
 
     #[test]

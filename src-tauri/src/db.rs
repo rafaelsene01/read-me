@@ -200,6 +200,30 @@ ALTER TABLE books ADD COLUMN last_page        INTEGER;
 ALTER TABLE books ADD COLUMN last_opened_at   TEXT;
 ";
 
+/// One row per reading, not per book (HIST-10, HIST-11). "Ler" in the Library
+/// starts a new reading at page 1 and leaves the earlier ones in the history,
+/// each with its own position - one `last_page` on the book row could not hold
+/// two.
+///
+/// The positions saved under migration 10 move here as readings whose id is
+/// the book id: there was exactly one per book, so the id is unique and the
+/// copy is deterministic. `books.last_page` and `books.last_opened_at` stay as
+/// dead columns - SQLite drops a column only by rebuilding the table, and a
+/// rebuild of `books` under enforced foreign keys is a risk this does not
+/// need. Nothing writes them after this migration.
+const MIGRATION_11_READINGS: &str = "
+CREATE TABLE readings (
+    id             TEXT PRIMARY KEY,
+    book_id        TEXT NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+    last_page      INTEGER NOT NULL DEFAULT 0,
+    last_opened_at TEXT NOT NULL
+);
+CREATE INDEX idx_readings_book ON readings(book_id);
+INSERT INTO readings (id, book_id, last_page, last_opened_at)
+    SELECT id, id, COALESCE(last_page, 0), last_opened_at
+    FROM books WHERE last_opened_at IS NOT NULL;
+";
+
 /// Ordered list of schema versions. A migration is applied only when
 /// `PRAGMA user_version` is below its number, which is what makes a column
 /// change reach databases that already exist on disk — `CREATE TABLE IF NOT
@@ -215,6 +239,7 @@ const MIGRATIONS: &[(u32, &str)] = &[
     (8, MIGRATION_8_CHAT_MEMORY),
     (9, MIGRATION_9_BOOKS),
     (10, MIGRATION_10_BOOK_READER),
+    (11, MIGRATION_11_READINGS),
 ];
 
 fn user_version(conn: &Connection) -> Result<u32, String> {
@@ -612,10 +637,95 @@ mod tests {
     }
 
     #[test]
+    fn readings_is_migration_eleven() {
+        let position = MIGRATIONS
+            .iter()
+            .position(|(_, sql)| *sql == MIGRATION_11_READINGS)
+            .expect("the migration must be registered in the list");
+        assert_eq!(MIGRATIONS[position].0, 11);
+    }
+
+    /// HIST-11 on a machine that already read books: the position saved on
+    /// the book row becomes a reading, and a book never opened gets none.
+    #[test]
+    fn a_database_stopped_at_ten_keeps_every_saved_position_as_a_reading() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        for (version, sql) in MIGRATIONS.iter().take_while(|(v, _)| *v <= 10) {
+            conn.execute_batch(sql).unwrap();
+            conn.pragma_update(None, "user_version", *version).unwrap();
+        }
+        conn.execute_batch(
+            "INSERT INTO books (id, filename, format, size_bytes, imported_at, last_page, last_opened_at)
+                VALUES ('lido', 'a.epub', 'epub', 1, 'ontem', 7, '2026-09-01T00:00:00+00:00'),
+                       ('aberto-sem-posicao', 'b.epub', 'epub', 1, 'ontem', NULL, '2026-09-02T00:00:00+00:00'),
+                       ('nunca-aberto', 'c.epub', 'epub', 1, 'ontem', NULL, NULL);",
+        )
+        .unwrap();
+
+        apply_migrations(&mut conn).unwrap();
+
+        let mut stmt = conn
+            .prepare("SELECT id, book_id, last_page, last_opened_at FROM readings ORDER BY id")
+            .unwrap();
+        let readings: Vec<(String, String, i64, String)> = stmt
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        assert_eq!(
+            readings,
+            vec![
+                (
+                    "aberto-sem-posicao".to_string(),
+                    "aberto-sem-posicao".to_string(),
+                    0,
+                    "2026-09-02T00:00:00+00:00".to_string()
+                ),
+                (
+                    "lido".to_string(),
+                    "lido".to_string(),
+                    7,
+                    "2026-09-01T00:00:00+00:00".to_string()
+                ),
+            ],
+            "a posição salva não virou leitura, ou um livro nunca aberto ganhou uma"
+        );
+    }
+
+    #[test]
+    fn deleting_a_book_deletes_its_readings() {
+        // HIST-08 under migration 11: the history lives in another table now,
+        // and only the enforced foreign key takes it along.
+        let mut conn = Connection::open_in_memory().unwrap();
+        conn.pragma_update(None, "foreign_keys", true).unwrap();
+        apply_migrations(&mut conn).unwrap();
+        conn.execute_batch(
+            "INSERT INTO books (id, filename, format, size_bytes, imported_at)
+                VALUES ('b1', 'a.epub', 'epub', 1, 'ontem'), ('b2', 'b.epub', 'epub', 1, 'ontem');
+             INSERT INTO readings (id, book_id, last_page, last_opened_at)
+                VALUES ('r1', 'b1', 3, 'agora'), ('r2', 'b1', 0, 'agora'), ('r3', 'b2', 1, 'agora');",
+        )
+        .unwrap();
+
+        conn.execute("DELETE FROM books WHERE id = 'b1'", []).unwrap();
+
+        let left: Vec<String> = conn
+            .prepare("SELECT id FROM readings ORDER BY id")
+            .unwrap()
+            .query_map([], |row| row.get(0))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        assert_eq!(left, vec!["r3"], "as leituras do livro apagado sobreviveram");
+    }
+
+    #[test]
     fn a_fresh_database_gets_the_reader_columns_at_version_ten() {
         let conn = migrated_in_memory();
 
-        assert_eq!(user_version(&conn).unwrap(), 10);
+        // The latest version, not 10: this test is about the reader columns,
+        // and pinning the number made it fail the day migration 11 existed.
+        assert_eq!(user_version(&conn).unwrap(), MIGRATIONS.last().unwrap().0);
         let columns = column_names(&conn, "books");
         for expected in [
             "folder",
@@ -651,7 +761,7 @@ mod tests {
 
         apply_migrations(&mut conn).unwrap();
 
-        assert_eq!(user_version(&conn).unwrap(), 10);
+        assert_eq!(user_version(&conn).unwrap(), MIGRATIONS.last().unwrap().0);
         let (filename, status, page_count, last_page, last_opened_at): (
             String,
             String,

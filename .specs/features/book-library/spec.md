@@ -124,11 +124,25 @@ Open questions: nenhuma bloqueia esta feature. A única em aberto no milestone �
 **Acceptance Criteria**:
 
 1. WHEN o usuário aciona "abrir pasta" THEN o sistema SHALL abrir `<base_path>/library/` no explorador de arquivos do sistema
-2. WHEN a Biblioteca é exibida THEN a UI SHALL mostrar o caminho absoluto da pasta ao lado do botão
+2. ~~WHEN a Biblioteca é exibida THEN a UI SHALL mostrar o caminho absoluto da pasta ao lado do botão~~ — ⛔ **revogado** (LIB-12, AD-066)
 3. IF a pasta ainda não existe WHEN qualquer operação da Biblioteca roda THEN o sistema SHALL criá-la antes de continuar
 4. WHERE a instalação é portátil THEN a pasta SHALL ficar sob `./data/library`, ao lado do executável
 
 **Independent Test**: num app recém-instalado, sem nenhum livro importado, clicar em "abrir pasta" e ver o explorador abrir numa pasta `library` vazia.
+
+---
+
+### P2: Capa na lista (LIB-13, 2026-09-12)
+
+**User Story**: Como leitor, quero ver a capa de cada EPUB na lista da Biblioteca, para reconhecer o livro sem ler o nome do arquivo.
+
+**Acceptance Criteria**:
+
+1. WHEN a Biblioteca lista um EPUB que declara capa no `.opf` (EPUB 3 `properties="cover-image"` ou EPUB 2 `<meta name="cover">`) THEN a linha SHALL mostrar essa imagem
+2. IF o livro não declara capa, ou o arquivo não pode ser lido, THEN a linha SHALL mostrar um ícone no lugar, sem mensagem de erro
+3. The sistema SHALL NOT adivinhar a capa por nome de arquivo nem gravar cópia dela no disco ou no banco
+
+**Independent Test**: importar um EPUB com capa e um sem; o primeiro mostra a capa, o segundo o ícone.
 
 ---
 
@@ -157,8 +171,9 @@ Open questions: nenhuma bloqueia esta feature. A única em aberto no milestone �
 | LIB-08 | P1: Não escrever em `documents` | **Implemented** (T4) | mesmo teste acima, na asserção `COUNT(*) FROM documents = 0` depois de importar. É a prova mais direta de "sem RAG" que existe sem abrir o app |
 | LIB-09 | P1: Listar com nome, formato e tamanho | **Implemented** (T4, T6, T7) | unit `books_are_listed_from_the_newest_to_the_oldest` (`imported_at DESC` vindo do SQL; o store **não** reordena, para não criar segunda fonte de verdade). **Falta:** a lista nunca foi renderizada — nem em teste (não há suíte de frontend na árvore) nem no app |
 | LIB-10 | P1: Remover arquivo e linha, tolerando arquivo ausente | **Implemented** (T4) | units `removing_a_book_deletes_the_file_too` e `removing_a_book_whose_file_is_already_gone_still_drops_the_row` (→ `Ok(())`, linha some). **Falta:** o botão nunca foi clicado |
-| LIB-11 | P1: Abrir a pasta no explorador do sistema | **Implemented, NÃO MEDIDO** (T4, T6) | Escrito: `openPath(libraryPath)` do `@tauri-apps/plugin-opener`, desabilitado enquanto o caminho é `null`; `library_dir()` faz `create_dir_all` e é o único caminho de acesso à pasta, o que faz **LIB-11.3** valer também para a biblioteca vazia. **LIB-11.3 e LIB-11.4 (modo portátil) estão escritos, não medidos** — `library_dir()` nunca rodou. É a T9 |
-| LIB-12 | P1: Mostrar o caminho absoluto da pasta na UI | **Implemented, NÃO MEDIDO** (T5, T6) | Escrito: `libraryPath: string \| null` com ação própria `loadLibraryPath`, renderizado ao lado dos botões — não atrás de um clique. **Falta tudo o que importa aqui:** a tela nunca montou, então não se sabe se o caminho aparece nem se cabe na linha |
+| LIB-11 | P1: Abrir a pasta no explorador do sistema | **Implemented, NÃO MEDIDO** (T4, T6; corrigido na AD-069) | ⚠️ **O botão estava quebrado desde a T6** (relatado pelo usuário em 2026-09-12): `openPath()` era recusado porque `opener:default` não concede `allow-open-path`, e sem `catch` a recusa não aparecia. Agora: comando `open_library_folder` abre a pasta pelo Rust; falha vai para o banner de erro. Botão ainda desabilitado enquanto o caminho é `null`; `library_dir()` faz `create_dir_all` e é o único caminho de acesso à pasta, o que faz **LIB-11.3** valer também para a biblioteca vazia. **LIB-11.3 e LIB-11.4 (modo portátil) estão escritos, não medidos** — `library_dir()` nunca rodou. É a T9 |
+| LIB-12 | ⛔ **REVOGADO** — P1: Mostrar o caminho absoluto da pasta na UI (AD-066, 2026-09-12) | Revogado | O texto do caminho saiu do header a pedido do usuário; `libraryPath`/`loadLibraryPath` continuam existindo só para habilitar o botão "Abrir pasta" (LIB-11) |
+| LIB-13 | P2: Capa do EPUB na lista (AD-067) | **Implemented, NÃO MEDIDO** | unit `reader::epub::tests::the_cover_is_the_image_the_package_declares_and_nothing_is_guessed` (EPUB 3, EPUB 2, sem declaração → `None`, zip quebrado → `None`); comando `get_book_cover` + `BookCover` em `BookRow.tsx`, compilados (`npm run build` exit 0). **Falta:** nenhum EPUB real passou; a lista com capas nunca foi vista na tela |
 
 **ID format:** `LIB-[NUMBER]`
 **Status values:** Pending → In Design → In Tasks → **Implemented** → Verified

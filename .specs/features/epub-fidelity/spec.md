@@ -61,6 +61,7 @@ O plano do dia anterior (`book-illustrations`, AD-058) trazia **só as imagens**
 3. QUANDO a página tem imagem, ENTÃO **todas** as imagens dela aparecem, no lugar e no tamanho que o livro define.
 4. QUANDO o EPUB traz `<script>`, ENTÃO ele **não é executado**.
 5. QUANDO o CSS do livro define cor ou fonte, ENTÃO isso não vaza para a interface do app.
+6. QUANDO um EPUB é processado, ENTÃO cada item do spine (capítulo ou parte pré-textual) começa numa página nova; um capítulo maior que uma página continua dividido em várias. (FID-13, AD-068)
 
 ### P1: Traduzir sem perder a formatação
 
@@ -98,6 +99,7 @@ O plano do dia anterior (`book-illustrations`, AD-058) trazia **só as imagens**
 | FID-10 | P1: Imagens compartilhadas entre idiomas | `reader/storage.rs` — `write_images` | implemented — unit |
 | FID-11 | P1: `images/` e `styles/` não são idioma | `reader_commands.rs`, `storage::is_reserved_dir` | implemented — unit |
 | FID-12 | P1: PDF continua produzindo texto puro | `reader_commands.rs` — `extract` | implemented — a suíte do caminho de PDF não mudou |
+| FID-13 | P1: Cada item do spine começa numa página nova (AD-068) | `reader/epub.rs` — `EpubHtml.chapters`; `reader/html.rs` — `paginate_chapters` | implemented — units `each_spine_document_is_its_own_chapter_in_spine_order` e `every_chapter_opens_a_page_and_a_long_one_still_spans_several`. **Não medido no livro real:** exige reprocessar *A Última Carta*, o que apaga a tradução `en` (READ-13). O fallback `.txt` (EPUB que não abre estruturalmente) **não** ganhou a quebra |
 
 **"implemented" = o código existe e o teste citado passa.** Nenhum EPUB real passou por aqui: a
 T7 (UAT) **não foi executada**, e é ela que responde ao print que abriu a feature.

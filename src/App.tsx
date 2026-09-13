@@ -4,7 +4,6 @@ import { useEffect } from "react";
 import { Sidebar } from "./components/Sidebar/Sidebar";
 import { ReaderPanel } from "./components/Reader/ReaderPanel";
 import { SettingsPanel } from "./components/Settings/SettingsPanel";
-import { RuntimePanel } from "./components/Runtime/RuntimePanel";
 import { LibraryPanel } from "./components/Library/LibraryPanel";
 import { Wizard } from "./components/Onboarding/Wizard";
 import { UpdateBanner } from "./components/Update/UpdateBanner";
@@ -49,8 +48,6 @@ function App() {
         <UpdateBanner />
         {activeView === "settings" ? (
           <SettingsPanel />
-        ) : activeView === "runtime" ? (
-          <RuntimePanel />
         ) : activeView === "library" ? (
           <LibraryPanel />
         ) : (

@@ -1,11 +1,7 @@
 {
-  "app": {
-    "name": "ReadMe"
-  },
   "sidebar": {
     "chats": "Chats",
     "documents": "Documentos",
-    "runtime": "Runtime",
     "settings": "Configurações",
     "library": "Biblioteca"
   },
@@ -65,7 +61,7 @@
   },
   "library": {
     "title": "Biblioteca",
-    "import": "Importar livros",
+    "import": "Importar EPUB",
     "importing": "Importando…",
     "fileDialogTitle": "Escolha os livros",
     "supportedFormats": "EPUB",
@@ -134,14 +130,8 @@
     "systemVoice": "Lendo com a voz do sistema — baixe uma voz para ter melhor qualidade."
   },
   "runtime": {
-    "title": "Runtime",
     "tabRuntime": "Runtime",
     "tabModels": "Modelos",
-    "status": {
-      "running": "Respondendo com {{name}}",
-      "idle": "Modelo escolhido: {{name}} — runtime parado",
-      "none": "Nenhum modelo escolhido"
-    },
     "engine": {
       "title": "Runtime embutido (llama.cpp)",
       "description": "Vem dentro do ReadMe — não há mais nada para instalar.",
@@ -208,6 +198,7 @@
   },
   "settings": {
     "title": "Configurações",
+    "tabGeneral": "Geral",
     "back": "Voltar ao chat",
     "theme": "Tema",
     "language": "Idioma",

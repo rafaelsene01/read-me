@@ -61,11 +61,13 @@ Open questions: nenhuma. A única que existia — **qual é a âncora da posiç�
 
 **Acceptance Criteria**:
 
-1. WHEN um livro é aberto para leitura THEN o sistema SHALL registrar ou atualizar o instante da última abertura
-2. WHILE a leitura avança THEN o sistema SHALL persistir a posição corrente
-3. WHEN o usuário reabre um livro que já tem posição salva THEN o sistema SHALL abrir naquela posição
-4. IF o livro nunca foi aberto WHEN o usuário o abre THEN o sistema SHALL começar do início
-5. WHEN um livro é removido da Biblioteca THEN o sistema SHALL remover também a entrada dele no histórico
+⚠️ **Desde 2026-09-12 (AD-071) a posição é por leitura, não por livro:** uma entrada do histórico é uma linha de `readings`, e o mesmo livro pode ter várias. Os critérios abaixo valem para cada leitura.
+
+1. WHEN uma leitura é aberta THEN o sistema SHALL registrar ou atualizar o instante da última abertura dela
+2. WHILE a leitura avança THEN o sistema SHALL persistir a posição corrente **naquela leitura**
+3. WHEN o usuário reabre uma leitura do histórico THEN o sistema SHALL abrir na posição salva dela
+4. WHEN uma leitura nova começa THEN o sistema SHALL começar do início
+5. WHEN um livro é removido da Biblioteca THEN o sistema SHALL remover também **todas** as leituras dele do histórico
 
 ---
 
@@ -76,10 +78,23 @@ Open questions: nenhuma. A única que existia — **qual é a âncora da posiç�
 **Acceptance Criteria**:
 
 1. WHEN o usuário aciona apagar numa entrada do histórico THEN o sistema SHALL pedir confirmação, porque a posição de leitura será perdida
-2. WHEN a remoção é confirmada THEN o sistema SHALL zerar `last_opened_at` **e** `last_page` daquele livro
-3. WHEN a entrada é apagada THEN o livro SHALL sumir do histórico e SHALL permanecer na Biblioteca, com o arquivo importado e **todas** as pastas de tradução intactas em disco
-4. WHEN um livro apagado do histórico é reaberto THEN o sistema SHALL começar da primeira página
-5. WHEN uma entrada é apagada THEN as demais entradas do histórico SHALL permanecer intactas
+2. WHEN a remoção é confirmada THEN o sistema SHALL apagar aquela leitura, com a posição dela (⚠️ **alterado pela AD-071**: antes zerava `last_opened_at` e `last_page` do livro)
+3. WHEN a entrada é apagada THEN ela SHALL sumir do histórico e o livro SHALL permanecer na Biblioteca, com o arquivo importado e **todas** as pastas de tradução intactas em disco
+4. WHEN o livro de uma leitura apagada é lido de novo THEN o sistema SHALL começar uma leitura nova, da primeira página
+5. WHEN uma entrada é apagada THEN as demais entradas do histórico, **inclusive outras leituras do mesmo livro**, SHALL permanecer intactas
+
+---
+
+### P1: Ler de novo abre outra leitura (2026-09-12, AD-071)
+
+**User Story**: Como leitor, quero que "Ler" na Biblioteca abra uma leitura nova na página 1, para recomeçar um livro sem perder a leitura que eu já tinha.
+
+**Acceptance Criteria**:
+
+1. WHEN o usuário aperta "Ler" num livro da Biblioteca THEN o sistema SHALL criar uma leitura nova no histórico, aberta na primeira página (HIST-10)
+2. WHEN o livro já tem leituras no histórico THEN elas SHALL continuar lá, cada uma com a sua posição, e a nova SHALL aparecer no topo (HIST-11)
+3. WHEN o usuário clica numa entrada do histórico THEN o sistema SHALL retomar aquela leitura, não criar outra
+4. WHEN o app é atualizado de uma versão com a posição na linha do livro THEN cada posição salva SHALL virar uma leitura, e livro nunca aberto SHALL NOT ganhar leitura
 
 ---
 
@@ -113,5 +128,10 @@ Open questions: nenhuma. A única que existia — **qual é a âncora da posiç�
 | HIST-07 | P1: Livro nunca aberto começa do início | `book-reader` T7: `last_page` NULL → 0, e a abertura não grava posição | **verificado em unidade** — `a_book_never_opened_starts_at_the_first_page` (257/0/16): devolve 0 **e a coluna continua NULL**; `an_imported_book_never_opened_is_not_in_the_history` confere o outro lado, o livro importado fora do histórico |
 | HIST-08 | P1: Remover o livro remove o histórico | in tasks | pending — `book-reader` T2 |
 | HIST-09 | P1: Apagar uma leitura do histórico | `forget_position` + comando `forget_reading_entry` em `src-tauri/src/reader_commands.rs`; `readerApi.forgetReadingEntry`; botão de lixeira por linha na `ReadingList`, com `window.confirm` (mesmo padrão do `BookEditPanel`); chaves `reader.historyRemove` e `reader.historyRemoveConfirm` | **backend verificado por teste; a tela só compila.** `deleting_a_history_entry_forgets_the_position_and_keeps_the_book` cobre AC 2/3/5 (as duas colunas voltam a NULL, o vizinho segue no histórico com a posição dele, o `.epub` e as pastas `original/`, `pt/` e `en/` continuam em disco com o mesmo número de páginas) e `a_book_deleted_from_the_history_reopens_at_the_first_page` cobre AC 4 (7 → 0); `forgetting_a_book_that_does_not_exist_is_an_error` cobre a linha inexistente. Suíte em **269/0/17** (2026-09-07); com o `last_page = NULL` removido do UPDATE, **2 desses testes falham** — foi medido. **AC 1 e o sumiço da linha nunca foram vistos**: `npm run build` **exit 0** e nada mais, porque não há suíte de frontend (`npm test`: *"No test files found"*, exit 1) e o app não foi aberto |
+
+| HIST-10 | P1: "Ler" na Biblioteca cria uma leitura nova na página 1 (AD-071) | migração 11 (`MIGRATION_11_READINGS`); `start_reading_row` + comando `start_reading`; `readerStore.openBook` sem `readingId` | **backend verificado por teste; a tela só compila.** `reading_a_book_again_is_a_new_entry_at_the_first_page`, `a_book_never_opened_starts_at_the_first_page`, `starting_a_reading_of_a_book_that_does_not_exist_is_an_error`. `npm run build` exit 0. **Nunca clicado** |
+| HIST-11 | P1: Várias leituras do mesmo livro coexistem, cada uma com a sua posição (AD-071) | tabela `readings`; `ReadingEntry.book_id`; `ReadingList` por id de leitura; reprocessar clampa **todas** as leituras | **backend verificado por teste** — o mesmo `reading_a_book_again_...` (a antiga continua na 6), `reprocessing_into_fewer_pages_clamps_the_saved_position` (duas leituras clampadas), `a_database_stopped_at_ten_keeps_every_saved_position_as_a_reading` e `deleting_a_book_deletes_its_readings` (cascata com `foreign_keys = ON`). **A migração 11 não foi ensaiada contra cópia do banco real** |
+
+⚠️ **HIST-04 a HIST-09 mudaram de endereço em 2026-09-12 (AD-071):** as funções têm os mesmos nomes, mas `open_position`, `save_position` e `forget_position` agora recebem o **id da leitura** e escrevem em `readings`. `books.last_page` e `books.last_opened_at` ficaram como colunas mortas. Os testes citados nas linhas acima foram reescritos sobre leituras; as contagens de suíte que eles carregam (257/0/16 etc.) são históricas.
 
 **ID format:** `HIST-[NUMBER]`

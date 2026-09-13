@@ -235,7 +235,10 @@ export interface Utterance {
 /** Mirrors `ReadingEntry` in reader_commands.rs — one line of the reading
  *  history (HIST-02). `last_page` is zero-based and already clamped. */
 export interface ReadingEntry {
+  /** The reading's id, not the book's: a book can be read more than once
+   *  (HIST-11). */
   id: string;
+  book_id: string;
   filename: string;
   page_count: number;
   last_page: number;

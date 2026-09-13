@@ -103,8 +103,14 @@ acompanhar o texto sem lê-lo.
 3b. WHEN the user presses the space bar while the reader has focus, THEN the system SHALL toggle
     between playing and paused, and SHALL NOT turn the page.
 4. WHEN the user stops read-aloud, THEN the system SHALL stop the audio and clear the mark.
-5. WHEN the user turns the page, changes language, or closes the book, THEN the system SHALL stop
-   playback and clear the mark before the new page is shown.
+5. ⚠️ **ALTERADO em 2026-09-12 (AD-070).** ~~WHEN the user turns the page, changes language, or
+   closes the book, THEN the system SHALL stop playback and clear the mark before the new page is
+   shown.~~ WHEN the user turns the page or changes language WHILE playing, THEN the system SHALL
+   continue reading from the first sentence of the page now on screen; IF playback was paused, THEN
+   it SHALL stop and clear the mark. WHEN the user closes the book or opens another one, THEN the
+   system SHALL stop playback and clear the mark.
+5b. WHEN the user leaves the reader screen (Library, Settings, Runtime) WHILE reading aloud, THEN the
+    system SHALL stop playback. (TTS-38)
 6. The system SHALL derive the spoken text from the page currently on screen, in the language
    currently on screen.
 7. The system SHALL keep every byte on the machine: no network request is made to play a page.
@@ -119,7 +125,8 @@ acompanhar o texto sem lê-lo.
     as a manual page turn does (READ-17, HIST-05).
 
 **Independent Test**: abrir um livro, apertar ouvir, e ver a palavra correndo com o áudio até o fim
-da página e seguindo para a próxima sozinho; virar a página à mão e confirmar que o áudio parou.
+da página e seguindo para a próxima sozinho; virar a página à mão e confirmar que a leitura continua
+do topo da página nova, sem pular página (AD-070); ir para a Biblioteca e confirmar que o áudio parou.
 
 ---
 
@@ -309,6 +316,8 @@ o texto e o tempo de cada um.
 1. WHEN the user changes the reading speed, THEN the system SHALL apply it from the next sentence
    onward.
 2. The system SHALL persist the chosen speed across restarts.
+3. The reader screen SHALL offer the speed control next to the read-aloud buttons, editing the same
+   stored value as Settings > Voices. (AD-070)
 
 ---
 
@@ -342,7 +351,7 @@ o texto e o tempo de cada um.
 | TTS-02 | P1: Síntese por frase, com a duração vinda do áudio gerado | Design | Pending |
 | TTS-03 | P1: Palavra corrente marcada, interpolada dentro da frase | Design | Pending |
 | TTS-04 | P1: O texto lido é o da página e do idioma na tela | Design | Pending |
-| TTS-05 | P1: Tocar, pausar, retomar e parar; virar página para | Design | Pending |
+| TTS-05 | P1: Tocar, pausar, retomar e parar; ⚠️ **ALTERADO (AD-070)**: virar página ~~para~~ **continua lendo** a página nova se estava tocando; pausado, para; fechar/trocar de livro para | `readAloudStore.ts` — assinatura do `readerStore` + `autoTurn` | Implemented — **sem teste** (sem suíte de frontend); `npm run build` exit 0. Corrige de passagem um defeito lido no código, não reproduzido na tela: a virada manual não parava nada, e a frase antiga, ao terminar, fazia a leitura contínua pular uma página a mais |
 | TTS-06 | P1: Uma reprodução por vez | Design | Pending |
 | TTS-07 | P1: Nenhuma requisição de rede para ler uma página | Design | Pending |
 | TTS-08 | P1: Página `.txt` (PDF e formato antigo) também é lida | Design | Pending |
@@ -369,7 +378,8 @@ o texto e o tempo de cada um.
 | TTS-29 | P2: Experimentar um modelo traduzindo um parágrafo da página | - | Pending |
 | TTS-30 | P2: O experimento não escreve nada em disco e informa o tempo | - | Pending |
 | TTS-31 | P2: Remover uma voz, dizendo o espaço liberado | `tts/voices.rs` — `remove` | Implemented — unit |
-| TTS-32 | P1: Velocidade de leitura escolhida e persistida | `tts/speaker.rs` — `length_scale` | Implemented — unit da inversão e do clamp |
+| TTS-32 | P1: Velocidade de leitura escolhida e persistida — **também no cabeçalho do leitor** (AD-070) | `tts/speaker.rs` — `length_scale`; `readAloudStore.ts` — `setSpeed`; `ReaderPanel.tsx` | Implemented — unit da inversão e do clamp. O controle do leitor descarta a frase já sintetizada adiante, para a mudança valer já na próxima frase (critério 1); **sem teste de frontend, não ouvido** |
+| TTS-38 | P1: Sair da tela do leitor para a leitura em voz alta (AD-070) | `readAloudStore.ts` — assinatura do `uiStore` | Implemented — **sem teste** (sem suíte de frontend); `npm run build` exit 0 |
 | TTS-33 | P1: Botão de ouvir no cabeçalho do leitor, com pausar e parar | Design | Pending |
 | TTS-34 | P1: Barra de espaço alterna tocar/pausar sem virar página | Design | Pending |
 | TTS-35 | P1: Sem voz do Piper instalada, cai no `speechSynthesis` do sistema | Design | Pending |

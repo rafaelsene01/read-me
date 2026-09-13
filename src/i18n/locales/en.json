@@ -1,11 +1,7 @@
 {
-  "app": {
-    "name": "ReadMe"
-  },
   "sidebar": {
     "chats": "Chats",
     "documents": "Documents",
-    "runtime": "Runtime",
     "settings": "Settings",
     "library": "Library"
   },
@@ -65,7 +61,7 @@
   },
   "library": {
     "title": "Library",
-    "import": "Import books",
+    "import": "Import EPUB",
     "importing": "Importing…",
     "fileDialogTitle": "Choose books",
     "supportedFormats": "EPUB",
@@ -134,14 +130,8 @@
     "systemVoice": "Reading with the system voice — download a voice for better quality."
   },
   "runtime": {
-    "title": "Runtime",
     "tabRuntime": "Runtime",
     "tabModels": "Models",
-    "status": {
-      "running": "Answering with {{name}}",
-      "idle": "Model chosen: {{name}} — runtime stopped",
-      "none": "No model chosen"
-    },
     "engine": {
       "title": "Built-in runtime (llama.cpp)",
       "description": "Ships inside ReadMe — there is nothing else to install.",
@@ -208,6 +198,7 @@
   },
   "settings": {
     "title": "Settings",
+    "tabGeneral": "General",
     "back": "Back to chat",
     "theme": "Theme",
     "language": "Language",

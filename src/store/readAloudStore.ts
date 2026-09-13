@@ -1,9 +1,10 @@
 // SPEC: read-aloud (TTS-02, TTS-03, TTS-05, TTS-06, TTS-07, TTS-16,
-//       TTS-17, TTS-18, TTS-19, TTS-24, TTS-35)
+//       TTS-17, TTS-18, TTS-19, TTS-24, TTS-32, TTS-35, TTS-38)
 
 import { create } from "zustand";
 import { ttsApi } from "../lib/ttsApi";
 import { useReaderStore } from "./readerStore";
+import { useUiStore } from "./uiStore";
 import type { Utterance } from "../types";
 
 /** Where the sentence sits inside its block, so the page can mark it. */
@@ -23,7 +24,11 @@ interface ReadAloudState {
   voiceId: string | null;
   usingSystemVoice: boolean;
   error: string | null;
+  /** Reading speed, the same stored value Settings > Voices edits (TTS-32). */
+  speed: number;
 
+  loadSpeed: () => Promise<void>;
+  setSpeed: (speed: number) => Promise<void>;
   start: (from?: number) => Promise<void>;
   toggle: () => Promise<void>;
   stop: () => void;
@@ -39,6 +44,20 @@ let lookahead: { index: number; bytes: Promise<ArrayBuffer> } | null = null;
 /** Bumped on every stop and page change; a reply from an older generation is
  *  dropped instead of playing over the new one. */
 let generation = 0;
+/** True while continuous reading turns the page itself. It is what tells that
+ *  turn apart from one the user made, which the page subscriber below restarts
+ *  on the new page. */
+let autoTurn = false;
+
+async function turnPageOnItsOwn() {
+  const reader = useReaderStore.getState();
+  autoTurn = true;
+  try {
+    await reader.goToPage(reader.page + 1);
+  } finally {
+    autoTurn = false;
+  }
+}
 
 /** The offsets of each sentence inside its block.
  *
@@ -100,6 +119,26 @@ export const useReadAloudStore = create<ReadAloudState>((set, get) => ({
   voiceId: null,
   usingSystemVoice: false,
   error: null,
+  speed: 1,
+
+  loadSpeed: async () => {
+    const settings = await ttsApi.ttsSettings().catch(() => null);
+    if (settings) set({ speed: settings.speed });
+  },
+
+  setSpeed: async (speed) => {
+    set({ speed });
+    try {
+      await ttsApi.setTtsSpeed(speed);
+    } catch (err) {
+      set({ error: String(err) });
+      return;
+    }
+    // The sentence synthesized ahead was made at the old speed. Dropping it is
+    // what makes the change audible from the next sentence (TTS-32) instead of
+    // the one after it.
+    lookahead = null;
+  },
 
   stop: () => {
     generation += 1;
@@ -131,7 +170,7 @@ export const useReadAloudStore = create<ReadAloudState>((set, get) => ({
       // on rather than playing silence.
       set({ status: "idle", index: -1 });
       if (reader.page < reader.pageCount - 1) {
-        await reader.goToPage(reader.page + 1);
+        await turnPageOnItsOwn();
         void get().start(0);
       }
       return;
@@ -196,7 +235,7 @@ async function playFrom(
     releaseAudio();
     if (reader.page < reader.pageCount - 1) {
       set({ utterances: [], spans: [], index: -1 });
-      await reader.goToPage(reader.page + 1);
+      await turnPageOnItsOwn();
       if (generation !== mine) return;
       void get().start(0);
     } else {
@@ -249,14 +288,41 @@ async function playFrom(
   }
 }
 
-/** A page change stops the reading before the new page is shown (TTS-05). */
+/** A page the user turns (or a language switch, which reloads the page) keeps
+ *  an active reading going from the top of the new page; a paused one stops
+ *  (TTS-05, changed by AD-070).
+ *
+ *  The previous version meant to stop here but did not: its guard,
+ *  `generation === 0 || index === -1`, was false during any real playback, so
+ *  the old sentence kept playing, found an empty sentence list when it ended,
+ *  and continuous reading turned ONE MORE page - a manual turn skipped a page. */
 useReaderStore.subscribe((state, previous) => {
   if (state.text === previous.text) return;
-  const aloud = useReadAloudStore.getState();
   useReadAloudStore.setState({ utterances: [], spans: [] });
-  if (aloud.status === "playing" || aloud.status === "paused") {
-    // A page turned by continuous reading has already bumped the generation,
-    // so this only fires for a turn the user made.
-    if (generation === 0 || aloud.index === -1) aloud.stop();
+  if (autoTurn) return; // continuous reading starts the new page itself
+  const aloud = useReadAloudStore.getState();
+  if (aloud.status === "idle") return;
+  // Closing the book, or opening another book or another reading, is not a
+  // page turn.
+  if (
+    state.bookId !== previous.bookId ||
+    state.readingId !== previous.readingId ||
+    !state.bookId
+  ) {
+    aloud.stop();
+    return;
   }
+  // `openBook` clears the text before the page arrives; wait for the page.
+  if (state.text === "") return;
+  if (aloud.status === "paused") aloud.stop();
+  else void aloud.start(0);
+});
+
+/** Leaving the reader screen stops the reading (TTS-38): the page it follows
+ *  is no longer on screen to mark, and a voice with nothing to look at is a
+ *  voice the user has to hunt down to silence. */
+useUiStore.subscribe((state, previous) => {
+  if (previous.activeView !== "reader" || state.activeView === "reader") return;
+  const aloud = useReadAloudStore.getState();
+  if (aloud.status !== "idle") aloud.stop();
 });

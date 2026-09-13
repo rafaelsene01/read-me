@@ -1,5 +1,5 @@
 // SPEC: book-library (LIB-02, LIB-03, LIB-04, LIB-05, LIB-06, LIB-07, LIB-08,
-//       LIB-09, LIB-10, LIB-11, LIB-12), book-reader (READ-13, READ-18, READ-32)
+//       LIB-09, LIB-10, LIB-11), book-reader (READ-13, READ-18, READ-32)
 
 use crate::db::{require_conn, DbState};
 use crate::document_commands::{unique_destination, RejectedImport};
@@ -437,12 +437,29 @@ pub fn delete_book(app: AppHandle, db: State<DbState>, id: String) -> Result<(),
     remove_book(require_conn(&guard)?, &dir, &id)
 }
 
-/// The path itself, not an "open the folder" command: the UI has to show it
-/// anyway (LIB-12) and opens it with `openPath()` from the opener plugin, so
-/// one command serves both requirements (LIB-11).
+/// The path itself, not an "open the folder" command: the UI opens it with
+/// `openPath()` from the opener plugin (LIB-11). It used to also be shown on
+/// screen (LIB-12, revoked by AD-066).
 #[tauri::command]
 pub fn library_path(app: AppHandle) -> Result<String, String> {
     Ok(library_dir(&app)?.to_string_lossy().to_string())
+}
+
+/// Opens the library folder in the system file explorer (LIB-11).
+///
+/// Done here and not with `openPath()` in the frontend: `opener:default`
+/// (plugin 2.5.4) grants `allow-open-url` and `allow-reveal-item-in-dir` but
+/// **not** `allow-open-path`, so the button was refused silently. Granting it
+/// would need a scope covering any folder the user can pick as base path; the
+/// Rust API is not behind the IPC ACL, and the path it opens is the one this
+/// file computes - nothing from the webview becomes a path.
+#[tauri::command]
+pub fn open_library_folder(app: AppHandle) -> Result<(), String> {
+    use tauri_plugin_opener::OpenerExt;
+    let dir = library_dir(&app)?;
+    app.opener()
+        .open_path(dir.to_string_lossy(), None::<&str>)
+        .map_err(|e| e.to_string())
 }
 
 #[cfg(test)]

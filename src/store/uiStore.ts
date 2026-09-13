@@ -4,8 +4,9 @@ import { create } from "zustand";
 //       book-reader (READ-15), reading-history (HIST-01)
 
 // `"chat"` is gone, not merely unrouted: a union member nothing renders is a
-// state the app can enter and show nothing (AD-052 item 4).
-export type ActiveView = "reader" | "settings" | "runtime" | "library";
+// state the app can enter and show nothing (AD-052 item 4). `"runtime"` went
+// the same way when it became tabs inside Settings (SHELL-09).
+export type ActiveView = "reader" | "settings" | "library";
 
 interface UiState {
   activeView: ActiveView;

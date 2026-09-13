@@ -7,6 +7,78 @@
 
 ## Recent Decisions (Last 60 days)
 
+### AD-072: A lateral fica com histórico, Biblioteca e Configurações; Runtime vira aba (2026-09-12)
+
+**Pedidos do usuário:** tirar o "ReadMe" de cima da lista de leituras; mover o Runtime da lateral para dentro de Configurações "separando tudo em abas"; e "no sidebar deve ficar só a Biblioteca e Configurações". Perguntado se o histórico saía também — **não**: ele continua na lateral, e "só" vale para a navegação.
+
+**Decisão (SHELL-09):** a lateral perdeu o cabeçalho com o nome do app e a entrada de Runtime. `SettingsPanel` ganhou seis abas — Geral (tema e idioma), Pasta de armazenamento, Atualizações, Runtime, Modelos, Vozes — e absorveu o conteúdo do `RuntimePanel`. `RuntimePanel.tsx` e `RuntimeSection.tsx` foram apagados, e `"runtime"` saiu de `ActiveView` (mesma regra da AD-052: membro de união que nada renderiza é estado sem tela). Chaves órfãs removidas dos dois idiomas (`app.name`, `sidebar.runtime`, `runtime.title`, `runtime.status.*`); `settings.tabGeneral` entrou.
+
+**Perdido de propósito:** o ponto de status do runtime (verde/âmbar) que ficava na entrada da lateral. O `runtimeStore` já carrega o status sozinho ao ser importado (`runtimeStore.ts:155`), então nada deixou de ser carregado.
+
+**Gates:** `npm run build` exit 0 (1.862 módulos), i18n **229/229**. **Não verificado:** nada visto na tela; sem suíte de frontend.
+
+### AD-071: Cada "Ler" na Biblioteca é uma leitura nova no histórico — migração 11 (2026-09-12)
+
+**Pedido do usuário:** apertar "Ler" na Biblioteca deve abrir **outra** leitura no histórico, na página 1. Perguntado entre "entrada nova separada" e "mesma entrada, voltando à página 1" — escolhida a **entrada nova**.
+
+**Decisão:** a posição saiu da linha do livro. Migração **11** (`MIGRATION_11_READINGS`) cria `readings (id, book_id → books ON DELETE CASCADE, last_page, last_opened_at)` e copia cada posição salva como uma leitura cujo id é o do livro (havia exatamente uma por livro). `books.last_page`/`last_opened_at` ficam como colunas mortas: dropar coluna no SQLite é reconstruir `books` com chaves estrangeiras aplicadas, risco que isto não precisa. Comandos: `start_reading` (novo), `open_reading` (era `open_book`), `save_reading_position` e `forget_reading_entry` passam a receber o id da leitura. `readerStore` guarda `readingId`; `openBook` sem `readingId` cria leitura nova na página 0, com `readingId` retoma. A lateral recarrega quando a leitura aberta muda, para a entrada criada pela Biblioteca aparecer. Reprocessar clampa **todas** as leituras do livro. A leitura em voz alta para ao trocar de leitura, como já parava ao trocar de livro.
+
+**Specs:** HIST-10 e HIST-11 novos; HIST-04..09 reescritos para "por leitura" (o HIST-09 AC 2 e 4 marcados como alterados).
+
+**Gates:** `cargo test --lib` **339 / 0 / 22** (+5 novos; os de histórico reescritos, nenhum apagado), `npm run build` exit 0. **Não verificado:** a migração 11 **não foi ensaiada contra cópia do banco real** — o `AGENTS.md` exige isso para migração destrutiva; esta não apaga nada, mas copia dados, e o ensaio continua pendente. Nada clicado.
+
+### AD-070: Controles de leitura no leitor, e virar página não interrompe mais a leitura em voz alta (2026-09-12)
+
+**Três pedidos do usuário na mesma rodada:** (1) velocidade da voz na tela de leitura, e o seletor de idioma **do livro** só quando houver mais de um (confirmado por pergunta: não é seletor de voz); (2) sair da tela de leitura para a leitura; (3) virar página com a leitura ativa continua lendo.
+
+**Decisões:**
+- **Velocidade** no cabeçalho do leitor, editando o mesmo `tts_speed` de Configurações > Vozes (TTS-32). Ao mudar, a frase já sintetizada adiante (`lookahead`) é descartada — sem isso a mudança só se ouvia duas frases depois, contra o critério "a partir da próxima frase".
+- **Seletor de idioma** renderizado só com `languages.length > 1` (READ-33).
+- **Virar página (TTS-05 alterado):** tocando → recomeça do topo da página nova; pausado → para (assunção: "ativo" é tocando); fechar ou trocar de livro → para. A troca de idioma recarrega a página e segue a mesma regra. A virada da própria leitura contínua é distinguida por uma flag (`autoTurn`), não pela heurística anterior.
+- **Sair da tela do leitor** para a leitura (TTS-38), por assinatura do `uiStore` no `readAloudStore`.
+
+**Defeito achado lendo o código, não reproduzido:** a assinatura antiga do `readerStore` só parava se `generation === 0 || index === -1`, o que é falso durante qualquer reprodução real. Uma virada manual deixava a frase antiga tocando; ao terminar, a lista de frases (zerada) fazia a leitura contínua virar **mais uma** página. Provável origem do incômodo do pedido (3).
+
+**Efeito colateral aceito:** quando a tradução da página na tela chega durante a leitura, o `book-status` recarrega a página e a leitura recomeça do topo dela, no idioma novo.
+
+**Gates:** `npm run build` exit 0 (1.864 módulos). Nenhum Rust mudou; `cargo test` não foi rodado de novo. **Não verificado:** nada ouvido nem clicado; não há suíte de frontend.
+
+### AD-069: "Abrir pasta" nunca funcionou — a permissão do opener não cobria `openPath` (2026-09-12)
+
+**Defeito relatado pelo usuário:** apertar "Abrir pasta" não faz nada. **Causa, conferida no próprio plugin** (`tauri-plugin-opener` 2.5.4, `permissions/default.toml`): `opener:default` concede `allow-open-url`, `allow-reveal-item-in-dir` e `allow-default-urls` — **não** `allow-open-path`. O `openPath()` do `LibraryPanel` era recusado pela ACL, e a chamada não tinha `catch`, então o botão falhava em silêncio. O LIB-11 estava `Implemented, NÃO MEDIDO` desde a T6: nunca tinha sido clicado.
+
+**Decisão:** comando `open_library_folder` no Rust, que chama `app.opener().open_path` com o caminho calculado por `library_dir`. Descartado: conceder `opener:allow-open-path` na capability — a pasta-base é escolhida pelo usuário (e é `./data` no portátil), então o escopo teria de ser `**`, deixando o webview abrir qualquer arquivo com o programa padrão. Pelo Rust, nenhum caminho vem da tela. A falha agora aparece no banner de erro da Biblioteca.
+
+**Gates:** `cargo check --lib` sem warnings, `npm run build` exit 0 (1.864 módulos — um a menos: o `@tauri-apps/plugin-opener` saiu do bundle). `cargo test --lib` não foi rodado de novo: nenhum teste nem função pura mudou. **Não verificado:** o botão não foi clicado; comando Tauri não tem runner de teste (`TESTING.md`).
+
+### AD-068: Cada item do spine começa numa página nova — o leitor não tinha noção de capítulo (2026-09-12)
+
+**Defeito relatado:** "o EPUB não está separando certo". Medido, só leitura, na biblioteca real (*A Última Carta*, 57 itens no spine, 323 páginas): **53 dos 54 documentos com texto começavam no meio de uma página**; a página 0002 juntava ficha catalográfica, dedicatória e sumário. Causa: `extract_epub_html` achatava os blocos de todos os documentos num vetor só, e `paginate_blocks` cortava por orçamento de caracteres sem saber onde um capítulo acabava.
+
+**Decisão (escolha do usuário entre três opções):** só a quebra — `EpubHtml.blocks` virou `chapters` (um vetor de blocos por item do spine) e `paginate_chapters` pagina cada um separado. **Sem sumário navegável**: o `toc.ncx` do livro (588 entradas) continua sem uso; fica para quando for pedido. Item do spine sem texto nenhum não vira página vazia.
+
+**Custo aceito e dito ao usuário:** livro já processado só muda depois de reprocessar, e reprocessar re-pagina e apaga as traduções (READ-13) — no livro real, a pasta `en` de 323 páginas. O fallback `.txt` (EPUB que não abre estruturalmente) não ganhou a quebra.
+
+**Gates:** `cargo test --lib` **334 / 0 / 22** (+2 testes novos, nenhum existente alterado). **Não verificado:** nenhum livro foi reprocessado; o app não foi aberto.
+
+### AD-067: A capa do EPUB aparece na lista, lida do `.opf` a cada abertura, sem cópia em disco (2026-09-12)
+
+**Pedido do usuário:** mostrar as capas dos EPUB na lista da Biblioteca. Vira o LIB-13 da `book-library`.
+
+**Decisão 1 — só a capa declarada.** `epub::cover_image` segue `properties="cover-image"` (EPUB 3) e `<meta name="cover">` (EPUB 2). Nada de adivinhar por nome de arquivo ou pegar a primeira imagem: um palpite errado mostra uma gravura qualquer como capa, pior que o ícone.
+
+**Decisão 2 — sem cache, sem migração.** `get_book_cover` abre o zip a cada montagem da lista e devolve bytes crus (mesmo transporte do `get_book_image`); livro sem capa volta vazio, não erro. O lock do banco é solto antes de ler o zip. Custo aceito e marcado com `ponytail:` no comando: uma biblioteca grande abre N zips ao montar a tela — cachear ao lado de `images/` se medir lento.
+
+**Gates:** `cargo test --lib` **332 / 0 / 22** (+1, o teste da capa), `npm run build` exit 0. **Não verificado:** nenhum EPUB real; o app não foi aberto.
+
+### AD-066: LIB-12 (caminho absoluto na tela) revogado — importar e abrir pasta viram ações do header (2026-09-12)
+
+**Pedido do usuário:** mover "Importar" e "Abrir pasta" para o header da Biblioteca, remover o caminho absoluto e o texto "EPUB" visíveis abaixo dele, e renomear o botão de importar para "Importar EPUB".
+
+**Decisão:** LIB-12 ("Mostrar o caminho absoluto da pasta na UI", P1) é revogado — a UI não mostra mais o `libraryPath`. O botão "Abrir pasta" (LIB-11) continua, agora no header, e permanece a forma de achar a pasta sem o caminho na tela. `library.import` passou de "Importar livros"/"Import books" para **"Importar EPUB"/"Import EPUB"**; isso não é uma feature nova, é rótulo — sem ID próprio. O texto solto "EPUB" abaixo dos botões saiu; a chave `library.supportedFormats` continua existindo (usada no filtro do seletor nativo, LIB-01), só não é mais renderizada como parágrafo.
+
+**Não verificado:** `npm run tauri dev` não rodou nesta sessão; o layout do header com os dois botões não foi visto na tela.
+
 ### AD-059: A troca de tela ao abrir um livro mora no store, e acontece antes do await (2026-09-07)
 
 **Contexto:** segundo defeito da UAT. O usuário apertou **Ler** na Biblioteca e nada aconteceu. `LibraryPanel` chamava `readerStore.openBook` e **não trocava a view** — o livro entrava no store e a tela continuava sendo a Biblioteca, que é justamente a única em que o `ReaderPanel` não está montado. Omissão da T11: ela criou a rota `reader` e não voltou ao chamador; o comentário no `LibraryPanel` dizia "a rota é T11" e ficou órfão quando a T11 terminou. A lateral (`ReadingList`) navegava, então o defeito só aparecia por um dos dois caminhos.

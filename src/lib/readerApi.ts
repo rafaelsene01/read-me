@@ -1,5 +1,5 @@
 // SPEC: book-reader (READ-02, READ-05, READ-16, READ-17, READ-26, READ-27,
-//       READ-29, READ-30), reading-history (HIST-02, HIST-09),
+//       READ-29, READ-30), reading-history (HIST-02, HIST-09, HIST-10, HIST-11),
 //       book-illustrations (ILLUS-07)
 
 import { invoke } from "@tauri-apps/api/core";
@@ -15,18 +15,21 @@ export const readerApi = {
     invoke<number>("process_book", { bookId, language }),
   /** Also cancels a retranslation: same key, there is no second command. */
   cancelProcessing: (bookId: string) => invoke<void>("cancel_processing", { bookId }),
+  /** A new reading at the first page; returns its id (HIST-10). */
+  startReading: (bookId: string) => invoke<string>("start_reading", { bookId }),
   /** Returns the position to resume at, already clamped (READ-16). */
-  openBook: (bookId: string) => invoke<number>("open_book", { bookId }),
-  saveReadingPosition: (bookId: string, page: number) =>
-    invoke<void>("save_reading_position", { bookId, page }),
+  openReading: (readingId: string) => invoke<number>("open_reading", { readingId }),
+  saveReadingPosition: (readingId: string, page: number) =>
+    invoke<void>("save_reading_position", { readingId, page }),
   getBookPage: (bookId: string, page: number, language: string | null) =>
     invoke<BookPage>("get_book_page", { bookId, page, language }),
   listReadingHistory: () => invoke<ReadingEntry[]>("list_reading_history"),
   /** Raw bytes, not a path: the asset protocol is disabled (ILLUS-07). */
   getBookImage: (bookId: string, name: string) =>
     invoke<ArrayBuffer>("get_book_image", { bookId, name }),
-  /** Clears the reading position. Deletes nothing on disk (HIST-09). */
-  forgetReadingEntry: (bookId: string) => invoke<void>("forget_reading_entry", { bookId }),
+  /** Deletes one reading. Deletes nothing on disk (HIST-09). */
+  forgetReadingEntry: (readingId: string) =>
+    invoke<void>("forget_reading_entry", { readingId }),
   /** `pages: null` redoes the whole language; `[]` only fills what is missing. */
   retranslatePages: (bookId: string, language: string, pages: number[] | null) =>
     invoke<void>("retranslate_pages", { bookId, language, pages }),

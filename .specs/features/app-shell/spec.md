@@ -75,6 +75,18 @@ O produto precisa de um esqueleto funcional (walking skeleton) antes de qualquer
 
 ---
 
+### P1: Lateral enxuta e Configurações em abas (2026-09-12, AD-072)
+
+**User Story**: Como leitor, quero a lateral só com o histórico de leituras, a Biblioteca e as Configurações, e tudo que é ajuste dentro de Configurações, separado em abas.
+
+**Acceptance Criteria**:
+
+1. WHEN a lateral é renderizada THEN ela SHALL mostrar o histórico de leituras e, como navegação, **só** Biblioteca e Configurações — sem entrada de Runtime e sem o cabeçalho com o nome do app (SHELL-09)
+2. WHEN o usuário abre Configurações THEN o painel SHALL separar o conteúdo em abas: Geral (tema e idioma), Pasta de armazenamento, Atualizações, Runtime, Modelos e Vozes (SHELL-09)
+3. The app SHALL NOT ter mais uma tela própria de Runtime: o que ela mostrava vive nas abas de Configurações (SHELL-09)
+
+---
+
 ## Edge Cases
 
 - WHEN o banco SQLite não existe no primeiro início THEN o sistema SHALL criá-lo e rodar migrações automaticamente
@@ -97,6 +109,7 @@ O produto precisa de um esqueleto funcional (walking skeleton) antes de qualquer
 | SHELL-06       | P2: Renomear chat              | Implemented | Implemented |
 | SHELL-07       | P2: Excluir chat + mensagens   | Implemented | Implemented |
 | SHELL-08       | Edge: init DB + migrações      | Implemented | Implemented |
+| SHELL-09       | P1: Lateral só com histórico + Biblioteca + Configurações; Runtime/Modelos/Vozes viram abas de Configurações (AD-072) | `Sidebar.tsx`, `SettingsPanel.tsx`, `uiStore.ts` (`"runtime"` saiu de `ActiveView`); `RuntimePanel.tsx` e `RuntimeSection.tsx` apagados | Implemented — **sem teste** (sem suíte de frontend); `npm run build` exit 0, i18n 229/229. Não visto na tela. Perdido de propósito: o ponto de status do runtime que ficava na entrada da lateral |
 
 **ID format:** `SHELL-[NUMBER]`
 **Status values:** Pending → In Design → In Tasks → Implementing → Verified

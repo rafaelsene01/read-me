@@ -66,11 +66,12 @@ Sem coluna de posição de leitura. Ela entra na migração que vier junto com o
 | `import_books` | `(paths: Vec<String>) -> ImportBooksResult` | LIB-02 (⛔ revogado como estava escrito — ver READ-32), LIB-03..LIB-08 |
 | `list_books` | `() -> Vec<BookRecord>` | LIB-09 |
 | `delete_book` | `(id: String) -> ()` | LIB-10 |
-| `library_path` | `() -> String` | LIB-11, LIB-12 |
+| `library_path` | `() -> String` | LIB-11 (LIB-12 ⛔ revogado, AD-066) |
+| `get_book_cover` (em `reader_commands.rs`) | `(book_id: String) -> bytes` (vazio = sem capa) | LIB-13 (AD-067) |
 
 `ImportBooksResult` repete a forma que já existe em `ImportResult`: `{ imported: Vec<BookRecord>, rejected: Vec<RejectedImport> }`. Um arquivo ruim não derruba os bons (LIB-03) — é o mesmo contrato de `import_documents`, e o motivo dele existir vale igual aqui.
 
-`library_path` devolve o caminho e a UI usa `openPath()` do `@tauri-apps/plugin-opener` para abrir. Não há comando `open_library_folder`: o frontend precisa do caminho de qualquer forma para LIB-12, então um comando serve aos dois requisitos.
+`library_path` devolve o caminho e a UI usa `openPath()` do `@tauri-apps/plugin-opener` para abrir. Não há comando `open_library_folder`: o frontend precisa do caminho de qualquer forma para LIB-12, então um comando serve aos dois requisitos. **Desde 2026-09-12 (AD-066) o caminho não aparece mais na tela**; o comando continua existindo só para habilitar o botão. **E o `openPath()` nunca funcionou** (AD-069): `opener:default` não concede `allow-open-path`. Abrir passou para o comando `open_library_folder`, no Rust.
 
 #### Detecção de DRM
 

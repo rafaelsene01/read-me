@@ -1,7 +1,9 @@
-// SPEC: book-library (LIB-09, LIB-10), book-reader (READ-01, READ-02, READ-03, READ-04, READ-05)
+// SPEC: book-library (LIB-09, LIB-10, LIB-13), book-reader (READ-01, READ-02, READ-03, READ-04, READ-05)
 
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { BookOpen, Pencil, Play, Trash2, X } from "lucide-react";
+import { libraryApi } from "../../lib/libraryApi";
 import type { BookRecord, BookStatus, BookStatusEvent } from "../../types";
 
 // What the reader can extract text from: pdfium for PDF, the zip/spine path for
@@ -38,6 +40,37 @@ function formatSize(bytes: number) {
   return `${bytes} B`;
 }
 
+/** The book's cover, fetched as bytes like the reader's illustrations (the
+ *  asset protocol is off). No cover, or any failure, shows the icon (LIB-13). */
+function BookCover({ bookId }: { bookId: string }) {
+  const [url, setUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    let objectUrl: string | null = null;
+    let cancelled = false;
+    libraryApi
+      .getBookCover(bookId)
+      .then((bytes) => {
+        if (cancelled || bytes.byteLength === 0) return;
+        objectUrl = URL.createObjectURL(new Blob([bytes]));
+        setUrl(objectUrl);
+      })
+      // A cover is decoration: the placeholder is the whole error handling.
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+      setUrl(null);
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [bookId]);
+
+  return (
+    <div className="flex h-14 w-10 shrink-0 items-center justify-center overflow-hidden rounded-sm bg-[var(--bg-elevated)] text-[var(--text-secondary)]">
+      {url ? <img src={url} alt="" className="h-full w-full object-cover" /> : <BookOpen size={16} />}
+    </div>
+  );
+}
+
 export function BookRow({
   book,
   progress,
@@ -61,16 +94,19 @@ export function BookRow({
   return (
     <div className="rounded-md border border-[var(--border-color)] px-3 py-2">
       <div className="flex items-center justify-between gap-3">
-        <div className="min-w-0">
-          <p className="truncate text-sm font-medium">{book.filename}</p>
-          <p className="text-xs text-[var(--text-secondary)]">
-            {book.format.toUpperCase()} · {formatSize(book.size_bytes)} ·{" "}
-            {!readable
-              ? t("library.statusUnsupported")
-              : isReady
-                ? t("library.pages", { pages: book.page_count })
-                : t(STATUS_LABEL_KEY[book.status])}
-          </p>
+        <div className="flex min-w-0 items-center gap-3">
+          <BookCover bookId={book.id} />
+          <div className="min-w-0">
+            <p className="truncate text-sm font-medium">{book.filename}</p>
+            <p className="text-xs text-[var(--text-secondary)]">
+              {book.format.toUpperCase()} · {formatSize(book.size_bytes)} ·{" "}
+              {!readable
+                ? t("library.statusUnsupported")
+                : isReady
+                  ? t("library.pages", { pages: book.page_count })
+                  : t(STATUS_LABEL_KEY[book.status])}
+            </p>
+          </div>
         </div>
 
         <div className="flex shrink-0 items-center gap-1.5">

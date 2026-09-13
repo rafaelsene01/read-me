@@ -1,5 +1,6 @@
 // SPEC: book-reader (READ-09), book-illustrations (ILLUS-01, ILLUS-08, ILLUS-11),
-//       epub-fidelity (FID-01, FID-03), read-aloud (TTS-09, TTS-10, TTS-11)
+//       epub-fidelity (FID-01, FID-03, FID-13), read-aloud (TTS-09, TTS-10, TTS-11),
+//       book-library (LIB-13)
 
 use super::html;
 use super::illustrations::{self, Illustration};
@@ -45,7 +46,7 @@ pub fn extract_epub_html(path: &Path) -> Result<EpubHtml, ParseError> {
     let (opf_path, manifest, spine) = open_package(&mut zip)?;
     let base = opf_path.rsplit_once('/').map(|(dir, _)| dir).unwrap_or("");
 
-    let mut blocks: Vec<String> = Vec::new();
+    let mut chapters: Vec<Vec<String>> = Vec::new();
     let mut images: Vec<Illustration> = Vec::new();
     let mut css = String::new();
     let mut css_seen: Vec<String> = Vec::new();
@@ -79,6 +80,7 @@ pub fn extract_epub_html(path: &Path) -> Result<EpubHtml, ParseError> {
             css.push('\n');
         }
 
+        let mut blocks: Vec<String> = Vec::new();
         for block in html::split_blocks(body_of(&xhtml)) {
             // Sanitizing here, and not at display time, is what makes the
             // `.html` on disk the audited artifact: what the user opens in the
@@ -96,21 +98,28 @@ pub fn extract_epub_html(path: &Path) -> Result<EpubHtml, ParseError> {
                 &mut images,
             ));
         }
+        // One spine document is one chapter (or one piece of front matter),
+        // and the boundary is kept so a page never starts a chapter halfway
+        // down (FID-13). Measured on the user's "A Última Carta": with the
+        // blocks flattened, 53 of its 54 documents began mid-page.
+        if !blocks.is_empty() {
+            chapters.push(blocks);
+        }
     }
 
-    if blocks.is_empty() {
+    if chapters.is_empty() {
         // Not an error the caller has to hide: `reader_commands` falls back to
         // the text extractor below, so a book this cannot open structurally is
         // still readable.
         return Err(ParseError::NoTextFound);
     }
-    Ok(EpubHtml { blocks, css, images })
+    Ok(EpubHtml { chapters, css, images })
 }
 
-/// An EPUB read as markup: the blocks in reading order, the book's CSS, and
-/// the image files the blocks point at.
+/// An EPUB read as markup: the blocks of each spine document in reading order,
+/// the book's CSS, and the image files the blocks point at.
 pub struct EpubHtml {
-    pub blocks: Vec<String>,
+    pub chapters: Vec<Vec<String>>,
     pub css: String,
     pub images: Vec<Illustration>,
 }
@@ -218,6 +227,40 @@ pub fn extract_epub(path: &Path) -> Result<(String, Vec<Illustration>), ParseErr
     let (opf_path, manifest, spine) = open_package(&mut zip)?;
     let base = opf_path.rsplit_once('/').map(|(dir, _)| dir).unwrap_or("");
     extract_epub_text_inner(&mut zip, base, &manifest, &spine)
+}
+
+/// The cover picture's bytes, or `None` when the book declares none (LIB-13).
+///
+/// Only what the package itself declares: EPUB 3 marks the manifest item with
+/// `properties="cover-image"`, EPUB 2 points at it with
+/// `<meta name="cover" content="<item id>">`. Nothing is guessed from file
+/// names - a wrong guess would show a random plate as the cover, which is
+/// worse than the placeholder. Every failure is `None` for the same reason
+/// `read_binary_entry` is: a missing cover never costs the row.
+pub fn cover_image(path: &Path) -> Option<Vec<u8>> {
+    let file = std::fs::File::open(path).ok()?;
+    let mut zip = zip::ZipArchive::new(file).ok()?;
+    let container = read_entry(&mut zip, "META-INF/container.xml").ok()?;
+    let opf_path = elements(&container, "rootfile")
+        .iter()
+        .find_map(|tag| attr(tag, "full-path"))?;
+    let opf = read_entry(&mut zip, &opf_path).ok()?;
+    let items = elements(&opf, "item");
+
+    let epub3 = items.iter().find(|tag| {
+        attr(tag, "properties").is_some_and(|p| p.split_whitespace().any(|v| v == "cover-image"))
+    });
+    let epub2 = || {
+        let id = elements(&opf, "meta")
+            .iter()
+            .find(|tag| attr(tag, "name").as_deref() == Some("cover"))
+            .and_then(|tag| attr(tag, "content"))?;
+        items.iter().find(|tag| attr(tag, "id").as_deref() == Some(id.as_str()))
+    };
+    let href = attr(epub3.or_else(epub2)?, "href")?;
+    // Like every manifest href, relative to the .opf and not to the zip root.
+    let base = opf_path.rsplit_once('/').map(|(dir, _)| dir).unwrap_or("");
+    read_binary_entry(&mut zip, &join_path(base, &href))
 }
 
 /// `META-INF/container.xml` -> the `.opf` -> `manifest` + `spine`.
@@ -701,6 +744,84 @@ mod tests {
             "sobrou um marcador apontando para arquivo nenhum: {text:?}"
         );
         assert_eq!(text, "texto");
+    }
+
+    #[test]
+    fn each_spine_document_is_its_own_chapter_in_spine_order() {
+        // FID-13. Dois capitulos, o spine pede o segundo primeiro. Achatados
+        // num vetor so, a fronteira sumia e a paginacao nao tinha como comecar
+        // o capitulo numa pagina nova.
+        let path = temp_dir("chapters").join("livro.epub");
+        let package = opf(&[("a", "a.xhtml"), ("b", "b.xhtml")], &["b", "a"]);
+        write_epub(
+            &path,
+            &[
+                ("META-INF/container.xml", CONTAINER),
+                ("OEBPS/content.opf", &package),
+                (
+                    "OEBPS/a.xhtml",
+                    "<html><body><p>a1</p><p>a2</p></body></html>",
+                ),
+                ("OEBPS/b.xhtml", "<html><body><p>b1</p></body></html>"),
+            ],
+        );
+
+        let book = extract_epub_html(&path).unwrap();
+
+        assert_eq!(
+            book.chapters,
+            vec![vec!["<p>b1</p>".to_string()], vec!["<p>a1</p>".to_string(), "<p>a2</p>".to_string()]]
+        );
+    }
+
+    #[test]
+    fn the_cover_is_the_image_the_package_declares_and_nothing_is_guessed() {
+        // LIB-13. Um EPUB 3 marca o item; um EPUB 2 aponta por <meta>. Um livro
+        // sem declaracao nenhuma fica sem capa, mesmo tendo um item com id
+        // "cover" - adivinhar mostraria uma gravura qualquer como capa.
+        let dir = temp_dir("cover");
+        let manifest_tail = r#"<item id="c1" href="c1.xhtml" media-type="application/xhtml+xml"/>"#;
+        let cases: [(&str, String, Option<&[u8]>); 3] = [
+            (
+                "epub3.epub",
+                format!(
+                    r#"<package><metadata/><manifest>{manifest_tail}<item id="img" href="Images/capa.jpg" media-type="image/jpeg" properties="cover-image"/></manifest><spine><itemref idref="c1"/></spine></package>"#
+                ),
+                Some(&b"capa"[..]),
+            ),
+            (
+                "epub2.epub",
+                format!(
+                    r#"<package><metadata><meta name="cover" content="img"/></metadata><manifest>{manifest_tail}<item id="img" href="Images/capa.jpg" media-type="image/jpeg"/></manifest><spine><itemref idref="c1"/></spine></package>"#
+                ),
+                Some(&b"capa"[..]),
+            ),
+            (
+                "sem-capa.epub",
+                format!(
+                    r#"<package><metadata/><manifest>{manifest_tail}<item id="cover" href="Images/capa.jpg" media-type="image/jpeg"/></manifest><spine><itemref idref="c1"/></spine></package>"#
+                ),
+                None,
+            ),
+        ];
+        for (name, package, expected) in cases {
+            let path = dir.join(name);
+            write_epub_with_bytes(
+                &path,
+                &[
+                    ("META-INF/container.xml", CONTAINER),
+                    ("OEBPS/content.opf", &package),
+                    ("OEBPS/c1.xhtml", &chapter("texto")),
+                ],
+                &[("OEBPS/Images/capa.jpg", b"capa")],
+            );
+            assert_eq!(cover_image(&path).as_deref(), expected, "{name}");
+        }
+
+        // Um arquivo que nem abre como zip e "sem capa", nao um erro na lista.
+        let broken = dir.join("quebrado.epub");
+        std::fs::write(&broken, b"nao e zip").unwrap();
+        assert_eq!(cover_image(&broken), None);
     }
 
     #[test]

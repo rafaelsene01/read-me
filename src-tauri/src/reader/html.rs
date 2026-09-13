@@ -1,4 +1,4 @@
-// SPEC: epub-fidelity (FID-05, FID-06, FID-07, FID-08), read-aloud (TTS-02)
+// SPEC: epub-fidelity (FID-05, FID-06, FID-07, FID-08, FID-13), read-aloud (TTS-02)
 
 //! Working with the book's own markup instead of throwing it away.
 //!
@@ -198,6 +198,13 @@ pub fn paginate_blocks(blocks: &[String]) -> Vec<String> {
         pages.push(current.join("\n\n"));
     }
     pages
+}
+
+/// Paginates each chapter on its own, so every chapter opens a page (FID-13).
+/// A long chapter still spans several pages; what can no longer happen is a
+/// page holding the end of one chapter and the start of the next.
+pub fn paginate_chapters(chapters: &[Vec<String>]) -> Vec<String> {
+    chapters.iter().flat_map(|chapter| paginate_blocks(chapter)).collect()
 }
 
 /// A block taken apart for translation: the outer tag stays, the inline tags
@@ -444,6 +451,29 @@ mod tests {
                 assert!(block.starts_with("<p>") && block.ends_with("</p>"));
             }
         }
+    }
+
+    #[test]
+    fn every_chapter_opens_a_page_and_a_long_one_still_spans_several() {
+        // FID-13. Os tres capitulos juntos cabem numa pagina so por tamanho;
+        // o terceiro, sozinho, passa do teto.
+        let long = "palavra ".repeat(400);
+        let chapters = vec![
+            vec!["<p>fim do um</p>".to_string()],
+            vec!["<p>Capítulo dois</p>".to_string(), "<p>curto</p>".to_string()],
+            (0..2).map(|i| format!("<p>tres {i} {long}</p>")).collect(),
+        ];
+
+        let pages = paginate_chapters(&chapters);
+
+        assert_eq!(pages.len(), 4, "{pages:?}");
+        assert_eq!(pages[0], "<p>fim do um</p>");
+        assert!(
+            pages[1].starts_with("<p>Capítulo dois</p>"),
+            "o capitulo dois comecou no meio de uma pagina: {:?}",
+            pages[1]
+        );
+        assert!(pages[2].starts_with("<p>tres 0") && pages[3].starts_with("<p>tres 1"));
     }
 
     #[test]

@@ -1,4 +1,4 @@
-// SPEC: book-library (LIB-03, LIB-09, LIB-10, LIB-11, LIB-12),
+// SPEC: book-library (LIB-03, LIB-09, LIB-10, LIB-11),
 //       book-reader (READ-02, READ-05)
 
 import { create } from "zustand";
@@ -11,7 +11,8 @@ interface LibraryState {
   books: BookRecord[];
   /** Files refused by the last import, kept next to the ones that went in. */
   rejected: RejectedImport[];
-  /** Absolute path of the library folder, shown in the UI (LIB-12). */
+  /** Absolute path of the library folder, what "Open folder" opens (LIB-11).
+   *  No longer shown on screen: LIB-12 was revoked by AD-066. */
   libraryPath: string | null;
   /** Last `book-status` event per book, for the row's progress (READ-05).
    *  Keyed by book id because several books can be processing at once. */

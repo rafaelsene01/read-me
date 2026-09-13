@@ -1,4 +1,5 @@
-// SPEC: book-reader (READ-12, READ-16, READ-17), reading-history (HIST-05, HIST-06, HIST-09),
+// SPEC: book-reader (READ-12, READ-16, READ-17),
+//       reading-history (HIST-05, HIST-06, HIST-09, HIST-10, HIST-11),
 //       epub-fidelity (FID-02)
 
 import { create } from "zustand";
@@ -13,6 +14,9 @@ let saveTimer: number | undefined;
 
 interface ReaderState {
   bookId: string | null;
+  /** The history entry being read. The position is saved against this, not
+   *  the book: one book can be read more than once (HIST-11). */
+  readingId: string | null;
   /** Zero-based, the same index the backend stores and clamps. */
   page: number;
   pageCount: number;
@@ -28,8 +32,10 @@ interface ReaderState {
   isLoading: boolean;
   error: string | null;
 
-  /** `language` omitted = resolve it from disk; `null` = read the original. */
-  openBook: (bookId: string, language?: string | null) => Promise<void>;
+  /** `language` omitted = resolve it from disk; `null` = read the original.
+   *  `readingId` given = resume that history entry; omitted = start a new
+   *  reading at the first page (HIST-10). */
+  openBook: (bookId: string, language?: string | null, readingId?: string) => Promise<void>;
   goToPage: (page: number) => Promise<void>;
   setLanguage: (language: string | null) => Promise<void>;
   /** `save: false` drops the position instead of flushing it (HIST-09). */
@@ -38,6 +44,7 @@ interface ReaderState {
 
 export const useReaderStore = create<ReaderState>((set, get) => ({
   bookId: null,
+  readingId: null,
   page: 0,
   pageCount: 0,
   text: "",
@@ -47,7 +54,7 @@ export const useReaderStore = create<ReaderState>((set, get) => ({
   isLoading: false,
   error: null,
 
-  openBook: async (bookId, language) => {
+  openBook: async (bookId, language, readingId) => {
     // The route switch lives here, not in the callers: opening a book always
     // means going to the reader, and a caller that forgot it shipped a dead
     // button - the Library loaded the book into this store and left the user
@@ -58,7 +65,14 @@ export const useReaderStore = create<ReaderState>((set, get) => ({
     // the wait from here - it renders its header, disables the arrows while
     // `isLoading`, and shows `error` if the page never arrives.
     useUiStore.getState().setActiveView("reader");
-    set({ isLoading: true, error: null, bookId, language: language ?? null, text: "" });
+    set({
+      isLoading: true,
+      error: null,
+      bookId,
+      readingId: null,
+      language: language ?? null,
+      text: "",
+    });
     try {
       // Omitted means the caller does not know the reading language: the
       // sidebar's history row has no such column, and `get_book_page` with
@@ -70,9 +84,14 @@ export const useReaderStore = create<ReaderState>((set, get) => ({
         language === undefined
           ? ((await readerApi.listBookLanguages(bookId)).find((l) => l.reading)?.language ?? null)
           : language;
-      // The backend owns the clamp and records the opening instant (HIST-04),
-      // so the position is asked for, never guessed from the row.
-      const page = await readerApi.openBook(bookId);
+      // No reading given is the Library's "Ler": a new history entry at the
+      // first page, leaving the earlier readings where they were (HIST-10).
+      // Stored before the page arrives, so the sidebar lists and highlights it.
+      const reading = readingId ?? (await readerApi.startReading(bookId));
+      set({ readingId: reading });
+      // Resuming: the backend owns the clamp and records the opening instant
+      // (HIST-04), so the position is asked for, never guessed from the row.
+      const page = readingId ? await readerApi.openReading(readingId) : 0;
       const p = await readerApi.getBookPage(bookId, page, resolved);
       set({
         language: resolved,
@@ -89,7 +108,7 @@ export const useReaderStore = create<ReaderState>((set, get) => ({
   },
 
   goToPage: async (page) => {
-    const { bookId, pageCount, language } = get();
+    const { bookId, readingId, pageCount, language } = get();
     if (!bookId || page < 0 || page >= pageCount) return;
     set({ isLoading: true, error: null });
     try {
@@ -104,7 +123,8 @@ export const useReaderStore = create<ReaderState>((set, get) => ({
       });
       window.clearTimeout(saveTimer);
       saveTimer = window.setTimeout(() => {
-        readerApi.saveReadingPosition(bookId, page).catch(() => {
+        if (!readingId) return;
+        readerApi.saveReadingPosition(readingId, page).catch(() => {
           // A lost position is cheaper than a banner over the text: the next
           // page turn writes again, and reopening only loses one page.
         });
@@ -129,15 +149,16 @@ export const useReaderStore = create<ReaderState>((set, get) => ({
   },
 
   closeBook: (save = true) => {
-    const { bookId, page } = get();
+    const { readingId, page } = get();
     window.clearTimeout(saveTimer);
     // The debounce still pending is exactly the last page turn, the one worth
     // keeping — so closing flushes it instead of cancelling it. The exception
     // is deleting the open book from the history (HIST-09): flushing there
     // would write back the position the deletion just cleared.
-    if (save && bookId) void readerApi.saveReadingPosition(bookId, page).catch(() => {});
+    if (save && readingId) void readerApi.saveReadingPosition(readingId, page).catch(() => {});
     set({
       bookId: null,
+      readingId: null,
       page: 0,
       pageCount: 0,
       text: "",

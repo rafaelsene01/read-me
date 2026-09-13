@@ -1,10 +1,10 @@
-// SPEC: book-reader (READ-12, READ-15, READ-16, READ-17, READ-28),
+// SPEC: book-reader (READ-12, READ-15, READ-16, READ-17, READ-28, READ-33),
 //       book-illustrations (ILLUS-06), epub-fidelity (FID-02, FID-04),
-//       read-aloud (TTS-03, TTS-05, TTS-12, TTS-17, TTS-33, TTS-34)
+//       read-aloud (TTS-03, TTS-05, TTS-12, TTS-17, TTS-32, TTS-33, TTS-34)
 
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { AlertTriangle, ChevronLeft, ChevronRight, Pause, Play, Square } from "lucide-react";
+import { AlertTriangle, ChevronLeft, ChevronRight, Gauge, Pause, Play, Square } from "lucide-react";
 import { useReaderStore } from "../../store/readerStore";
 import { readerApi } from "../../lib/readerApi";
 import { READER_SCRIPT, READER_SCRIPT_CSS } from "../../lib/readerScript";
@@ -123,6 +123,10 @@ export function ReaderPanel() {
   }, []);
 
   useEffect(() => {
+    void useReadAloudStore.getState().loadSpeed();
+  }, []);
+
+  useEffect(() => {
     if (!bookId) {
       setLanguages([]);
       return;
@@ -135,9 +139,11 @@ export function ReaderPanel() {
   useEffect(() => {
     if (!bookId) return;
     function onKeyDown(event: KeyboardEvent) {
-      // The language <select> uses the arrows to change option: stealing them
-      // there would move the page instead of the choice.
-      if (event.target instanceof HTMLSelectElement) return;
+      // The language <select> and the speed slider use the arrows to change
+      // their value: stealing them there would move the page instead.
+      if (event.target instanceof HTMLSelectElement || event.target instanceof HTMLInputElement) {
+        return;
+      }
       if (event.key === "ArrowLeft") void goToPage(page - 1);
       else if (event.key === "ArrowRight") void goToPage(page + 1);
       else if (event.key === " ") {
@@ -167,20 +173,41 @@ export function ReaderPanel() {
   return (
     <div className="flex flex-1 flex-col overflow-hidden bg-[var(--bg-app)] text-[var(--text-primary)]">
       <div className="flex items-center gap-3 border-b border-[var(--border-color)] px-6 py-4">
-        <select
-          value={language ?? ORIGINAL}
-          onChange={(e) => void setLanguage(e.target.value === ORIGINAL ? null : e.target.value)}
-          className="rounded-md border border-[var(--border-color)] bg-[var(--bg-app)] px-2 py-1 text-sm"
-          title={t("reader.language")}
-        >
-          {languages.map((lang) => (
-            <option key={lang.language} value={lang.language}>
-              {lang.language} ({lang.pages})
-            </option>
-          ))}
-        </select>
+        {/* READ-33: with only the original there is nothing to choose. */}
+        {languages.length > 1 && (
+          <select
+            value={language ?? ORIGINAL}
+            onChange={(e) => void setLanguage(e.target.value === ORIGINAL ? null : e.target.value)}
+            className="rounded-md border border-[var(--border-color)] bg-[var(--bg-app)] px-2 py-1 text-sm"
+            title={t("reader.language")}
+          >
+            {languages.map((lang) => (
+              <option key={lang.language} value={lang.language}>
+                {lang.language} ({lang.pages})
+              </option>
+            ))}
+          </select>
+        )}
 
         <div className="ml-auto flex items-center gap-2">
+          {/* TTS-32 in the reader: the same stored speed Settings edits. */}
+          <label
+            className="flex items-center gap-1.5 text-xs text-[var(--text-secondary)]"
+            title={t("voices.speed")}
+          >
+            <Gauge size={16} />
+            <input
+              type="range"
+              min={0.5}
+              max={2}
+              step={0.1}
+              value={aloud.speed}
+              onChange={(e) => void aloud.setSpeed(Number(e.target.value))}
+              aria-label={t("voices.speed")}
+              className="w-20"
+            />
+            <span className="w-8">{aloud.speed.toFixed(1)}×</span>
+          </label>
           {/* TTS-33: onde a mão já está, ao lado das setas de página. */}
           <button
             onClick={() => void aloud.toggle()}
