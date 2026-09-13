@@ -100,17 +100,27 @@ pub fn without_markers(text: &str) -> String {
     out.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
-/// Exactly `NNNN.<ext>`: four digits, a dot, a short alphanumeric extension.
+/// Exactly `NNNN.<ext>`: four to six digits, a dot, a short alphanumeric
+/// extension.
 ///
 /// This is a guard on a trust boundary. `get_book_image` receives this name
 /// from the frontend and joins it onto the book folder, so anything with a
 /// separator, a `..`, or a shape this crate never produces is refused before
 /// it can become a path.
+///
+/// Up to six digits because `image_name` pads to four and simply keeps going:
+/// a user's "Refactoring" EPUB has 26,787 distinct images in its spine
+/// (measured on the file, read-only), and its 10,000th one was refused here as
+/// "not an illustration name" - on the way to disk, failing the whole process.
+///
+/// ponytail: past 9999 the explorer's alphabetical order stops being reading
+/// order (`1000.png` < `10000.png` < `1001.png`). Pad by the book's total if
+/// someone browses such a folder by hand; the reader itself never sorts.
 pub fn is_image_name(name: &str) -> bool {
     let Some((stem, extension)) = name.split_once('.') else {
         return false;
     };
-    stem.len() == 4
+    (4..=6).contains(&stem.len())
         && stem.bytes().all(|b| b.is_ascii_digit())
         && (1..=5).contains(&extension.len())
         && extension.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit())
@@ -207,6 +217,22 @@ mod tests {
         }
         assert!(is_image_name("0001.png"));
         assert!(is_image_name("9999.jpeg"));
+    }
+
+    #[test]
+    fn the_ten_thousandth_illustration_is_still_an_illustration() {
+        // O defeito relatado: `not an illustration name: "10000.png"`. O nome
+        // que `image_name` gera para a imagem 10.000 tem de passar pelo mesmo
+        // guarda que o grava e que o `get_book_image` usa.
+        let name = image_name(10_000, "png");
+        assert_eq!(name, "10000.png");
+        assert!(is_image_name(&name));
+        assert_eq!(marker_name(&marker_for(&name)), Some("10000.png"));
+        assert!(is_image_name(&image_name(26_787, "jpg")));
+        // O teto continua sendo um teto: sete dígitos não são um nome que este
+        // crate produz para livro nenhum medido.
+        assert!(!is_image_name("1234567.png"));
+        assert!(!is_image_name("123.png"));
     }
 
     #[test]

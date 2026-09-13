@@ -146,6 +146,19 @@ Open questions: nenhuma bloqueia esta feature. A única em aberto no milestone �
 
 ---
 
+### P2: Lista ou cards (2026-09-12, LIB-14, LIB-15, AD-074)
+
+**User Story**: Como leitor, quero ver a Biblioteca como lista ou como cards de capa, com o tamanho que eu escolher, para achar o livro pela capa.
+
+**Acceptance Criteria**:
+
+1. WHEN o usuário escolhe Lista ou Cards no cabeçalho THEN a Biblioteca SHALL trocar de visualização, e a escolha SHALL ser lembrada nesta janela (LIB-14)
+2. WHILE a visualização é Cards THEN um campo numérico (spinner) SHALL definir a largura do card, de 100 a 360 px (LIB-14)
+3. The card SHALL mostrar só a capa; WHEN o mouse passa sobre ele (ou ele recebe foco) THEN o card SHALL girar e mostrar nome, dados, estado e as ações da linha (LIB-15)
+4. WHILE o livro está processando ou em edição THEN o card SHALL continuar virado, para o progresso e o editor não sumirem atrás da capa (LIB-15)
+
+---
+
 ## Edge Cases
 
 - WHEN dois arquivos com o mesmo nome são importados THEN o segundo SHALL virar `nome (2).ext`, sem sobrescrever o primeiro
@@ -174,6 +187,8 @@ Open questions: nenhuma bloqueia esta feature. A única em aberto no milestone �
 | LIB-11 | P1: Abrir a pasta no explorador do sistema | **Implemented, NÃO MEDIDO** (T4, T6; corrigido na AD-069) | ⚠️ **O botão estava quebrado desde a T6** (relatado pelo usuário em 2026-09-12): `openPath()` era recusado porque `opener:default` não concede `allow-open-path`, e sem `catch` a recusa não aparecia. Agora: comando `open_library_folder` abre a pasta pelo Rust; falha vai para o banner de erro. Botão ainda desabilitado enquanto o caminho é `null`; `library_dir()` faz `create_dir_all` e é o único caminho de acesso à pasta, o que faz **LIB-11.3** valer também para a biblioteca vazia. **LIB-11.3 e LIB-11.4 (modo portátil) estão escritos, não medidos** — `library_dir()` nunca rodou. É a T9 |
 | LIB-12 | ⛔ **REVOGADO** — P1: Mostrar o caminho absoluto da pasta na UI (AD-066, 2026-09-12) | Revogado | O texto do caminho saiu do header a pedido do usuário; `libraryPath`/`loadLibraryPath` continuam existindo só para habilitar o botão "Abrir pasta" (LIB-11) |
 | LIB-13 | P2: Capa do EPUB na lista (AD-067) | **Implemented, NÃO MEDIDO** | unit `reader::epub::tests::the_cover_is_the_image_the_package_declares_and_nothing_is_guessed` (EPUB 3, EPUB 2, sem declaração → `None`, zip quebrado → `None`); comando `get_book_cover` + `BookCover` em `BookRow.tsx`, compilados (`npm run build` exit 0). **Falta:** nenhum EPUB real passou; a lista com capas nunca foi vista na tela |
+| LIB-14 | P2: Alternar Lista/Cards, com tamanho do card por spinner (AD-074) | **Implemented, NÃO MEDIDO** | `LibraryPanel.tsx`: botões no cabeçalho, `input type="number"` 100–360 px passo 20, grid `repeat(auto-fill, <n>px)`, preferências em `localStorage` com `try/catch`. **Sem teste** (sem suíte de frontend); `npm run build` exit 0. Nunca visto na tela |
+| LIB-15 | P2: Card é a capa e gira no hover mostrando dados e ações (AD-074) | **Implemented, NÃO MEDIDO** | `BookRow.tsx` com `variant="card"`: giro 3D por CSS (`perspective`, `preserve-3d`, `backface-visibility`), a mesma lógica de estado/ações da linha. Conferido só que o Tailwind **gerou** as classes (`group-hover:[transform:rotateY(180deg)]` está no CSS do build). **Falta:** ver a animação, e confirmar que os botões do verso recebem o clique — a frente perde `pointer-events` no hover justamente por isso, mas não foi exercitado |
 
 **ID format:** `LIB-[NUMBER]`
 **Status values:** Pending → In Design → In Tasks → **Implemented** → Verified

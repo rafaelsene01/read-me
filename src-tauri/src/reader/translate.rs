@@ -1,5 +1,5 @@
 // SPEC: book-reader (READ-12, READ-14, READ-20, READ-21, READ-22, READ-23, READ-30),
-//       book-illustrations (ILLUS-05), epub-fidelity (FID-06, FID-07, FID-08)
+//       book-illustrations (ILLUS-05), epub-fidelity (FID-06, FID-07, FID-08, FID-15)
 
 //! Translating a book, one paragraph per request and one page per checkpoint.
 //!
@@ -168,8 +168,12 @@ where
     T: FnMut(String) -> Fut,
     Fut: std::future::Future<Output = Result<String, String>>,
 {
+    // The chapter's `<body>` tag goes around the translation unchanged (FID-15):
+    // it carries the alignment, and the language changes nothing about it. A
+    // page from before FID-15 has no tag and is translated exactly as before.
+    let (body_tag, inner) = html::page_body(page);
     let mut out: Vec<String> = Vec::new();
-    for block in html::split_blocks(page) {
+    for block in html::split_blocks(inner) {
         if cancelled.is_cancelled() {
             return Ok(None);
         }
@@ -190,7 +194,11 @@ where
         }
         out.push(html::rebuild(&held, translated.trim()));
     }
-    Ok(Some(out.join("\n\n")))
+    let joined = out.join("\n\n");
+    Ok(Some(match body_tag {
+        Some(tag) => format!("{tag}\n{joined}\n</body>"),
+        None => joined,
+    }))
 }
 
 /// One page: split, one request per paragraph, joined back with the blank line
@@ -457,6 +465,46 @@ mod tests {
             gpu_layers: None,
         };
         assert_eq!(select_model(Some(active)).unwrap().name, "outro.gguf");
+    }
+
+    #[tokio::test]
+    async fn a_page_inside_its_chapter_body_keeps_the_body_after_translation() {
+        // FID-15. A página gravada desde a FID-15 é o `<body>` do capítulo; a
+        // classe dele é o que traz o alinhamento, então a tradução tem de
+        // traduzir só os blocos de dentro e devolver a mesma tag em volta.
+        let dir = book("body-tag");
+        let original = storage::lang_dir(&dir, storage::ORIGINAL_DIR).unwrap();
+        let page = "<body class=\"class8\">\n<p>Primeiro.</p>\n\n<p>Segundo.</p>\n</body>";
+        storage::write_pages_ext(&original, &[page.to_string()], "html").unwrap();
+
+        let seen = Rc::new(RefCell::new(Vec::new()));
+        let log = seen.clone();
+        let mut translator = move |text: String| {
+            log.borrow_mut().push(text.clone());
+            std::future::ready(Ok(format!("[pt] {text}")))
+        };
+
+        translate_book(
+            &dir,
+            Some("pt"),
+            1,
+            &CancellationToken::default(),
+            &mut translator,
+            always_alive,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(
+            seen.borrow().as_slice(),
+            ["Primeiro.", "Segundo."],
+            "a página inteira virou um bloco só, ou a tag foi para o modelo"
+        );
+        let translated = storage::read_page(&storage::lang_dir(&dir, "pt").unwrap(), 1).unwrap();
+        assert_eq!(
+            translated,
+            "<body class=\"class8\">\n<p>[pt] Primeiro.</p>\n\n<p>[pt] Segundo.</p>\n</body>"
+        );
     }
 
     #[tokio::test]

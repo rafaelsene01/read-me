@@ -1,4 +1,5 @@
-// SPEC: app-shell (SHELL-09), self-contained-runtime (SELF-01), read-aloud (TTS-20, TTS-22, TTS-32)
+// SPEC: app-shell (SHELL-09), settings-storage-i18n (CFG-05, CFG-09),
+//       self-contained-runtime (SELF-01), read-aloud (TTS-20, TTS-22, TTS-32)
 
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -7,18 +8,12 @@ import { useConfigStore } from "../../store/configStore";
 import { useUiStore } from "../../store/uiStore";
 import { useUpdateStore } from "../../store/updateStore";
 import { configApi } from "../../lib/configApi";
-import { SUPPORTED_THEMES, type Theme } from "../../lib/theme";
+import { SUPPORTED_THEMES, THEME_LABEL_KEYS, applyTheme, currentColors } from "../../lib/theme";
+import type { CustomTheme } from "../../types";
 import { SUPPORTED_LANGUAGES, type SupportedLanguage } from "../../i18n";
 import { RuntimeCard } from "../Runtime/RuntimeCard";
 import { ModelsList } from "../Runtime/ModelsList";
 import { VoicesList } from "../Runtime/VoicesList";
-
-const THEME_LABEL_KEYS: Record<Theme, string> = {
-  dark: "settings.themeDark",
-  light: "settings.themeLight",
-  ocean: "settings.themeOcean",
-  terracotta: "settings.themeTerracotta",
-};
 
 const LANGUAGE_LABEL_KEYS: Record<SupportedLanguage, string> = {
   en: "settings.languageEnglish",
@@ -41,10 +36,13 @@ type Tab = (typeof TABS)[number][0];
 
 export function SettingsPanel() {
   const { t } = useTranslation();
-  const { config, setTheme, setLanguage, setBasePath } = useConfigStore();
+  const { config, setTheme, setCustomTheme, setLanguage, setBasePath } = useConfigStore();
   const setActiveView = useUiStore((s) => s.setActiveView);
   const [isChangingFolder, setIsChangingFolder] = useState(false);
   const [tab, setTab] = useState<Tab>("general");
+  /** The colors being picked. Painted on every change, persisted only once the
+   *  picker settles: a native color input fires on every pixel of a drag. */
+  const [draft, setDraft] = useState<CustomTheme | null>(null);
 
   const {
     settings: updateSettings,
@@ -62,6 +60,25 @@ export function SettingsPanel() {
     if (!updateSettings) void initUpdates();
   }, [updateSettings, initUpdates]);
 
+  useEffect(() => {
+    setDraft(config?.custom_theme ?? null);
+  }, [config?.custom_theme]);
+
+  useEffect(() => {
+    const saved = config?.custom_theme;
+    if (!draft || config?.theme !== "custom") return;
+    if (
+      saved &&
+      saved.background === draft.background &&
+      saved.text === draft.text &&
+      saved.accent === draft.accent
+    ) {
+      return;
+    }
+    const timer = window.setTimeout(() => void setCustomTheme(draft), 400);
+    return () => window.clearTimeout(timer);
+  }, [draft, config?.theme, config?.custom_theme, setCustomTheme]);
+
   if (!config) return null;
 
   async function handleChangeFolder() {
@@ -73,6 +90,20 @@ export function SettingsPanel() {
     } finally {
       setIsChangingFolder(false);
     }
+  }
+
+  // Choosing "custom" starts from the saved colors or, the first time, from the
+  // theme on screen - so the app does not jump to white on the click.
+  function chooseCustom() {
+    const colors = config?.custom_theme ?? currentColors();
+    if (colors) void setCustomTheme(colors);
+  }
+
+  function changeCustom(key: keyof CustomTheme, value: string) {
+    if (!draft) return;
+    const next = { ...draft, [key]: value };
+    setDraft(next);
+    applyTheme("custom", next);
   }
 
   return (
@@ -113,7 +144,9 @@ export function SettingsPanel() {
                 {SUPPORTED_THEMES.map((themeOption) => (
                   <button
                     key={themeOption}
-                    onClick={() => setTheme(themeOption)}
+                    onClick={() =>
+                      themeOption === "custom" ? chooseCustom() : void setTheme(themeOption)
+                    }
                     className={`rounded-md border px-3 py-2 text-sm ${
                       config.theme === themeOption
                         ? "border-[var(--accent)] bg-[var(--accent)] text-[var(--accent-fg)]"
@@ -124,6 +157,23 @@ export function SettingsPanel() {
                   </button>
                 ))}
               </div>
+
+              {/* CFG-09: native color inputs - the platform already has a picker. */}
+              {config.theme === "custom" && draft && (
+                <div className="mt-3 flex flex-wrap gap-4">
+                  {(["background", "text", "accent"] as const).map((key) => (
+                    <label key={key} className="flex items-center gap-2 text-sm">
+                      <input
+                        type="color"
+                        value={draft[key]}
+                        onChange={(e) => changeCustom(key, e.target.value)}
+                        className="h-8 w-10 cursor-pointer rounded border border-[var(--border-color)] bg-transparent"
+                      />
+                      {t(`settings.custom${key[0].toUpperCase()}${key.slice(1)}`)}
+                    </label>
+                  ))}
+                </div>
+              )}
             </section>
 
             <section>

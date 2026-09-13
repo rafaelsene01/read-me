@@ -55,6 +55,13 @@ export interface ChatRetrievalWarning {
   reason: string;
 }
 
+/** Mirrors `CustomTheme` in config.rs (CFG-09). Always `#rrggbb`. */
+export interface CustomTheme {
+  background: string;
+  text: string;
+  accent: string;
+}
+
 export interface AppConfig {
   base_path: string;
   theme: string;
@@ -62,6 +69,8 @@ export interface AppConfig {
   onboarding_completed: boolean;
   auto_update_check: boolean;
   skipped_version: string | null;
+  /** Kept after switching to a preset, so "custom" brings the colors back. */
+  custom_theme: CustomTheme | null;
 }
 
 /** Mirrors `StorageStatus` in config.rs. `configured && !ready` is the folder

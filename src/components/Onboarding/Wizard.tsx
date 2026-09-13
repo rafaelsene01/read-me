@@ -3,16 +3,16 @@ import { useTranslation } from "react-i18next";
 import { AlertTriangle, FolderOpen, Sparkles } from "lucide-react";
 import { configApi } from "../../lib/configApi";
 import { applyLanguage } from "../../i18n";
-import { applyTheme, SUPPORTED_THEMES, DEFAULT_THEME, type Theme } from "../../lib/theme";
+import {
+  applyTheme,
+  SUPPORTED_THEMES,
+  DEFAULT_THEME,
+  THEME_LABEL_KEYS,
+  type Theme,
+} from "../../lib/theme";
 import { SUPPORTED_LANGUAGES, DEFAULT_LANGUAGE, type SupportedLanguage } from "../../i18n";
 import { useConfigStore } from "../../store/configStore";
 
-const THEME_LABEL_KEYS: Record<Theme, string> = {
-  dark: "settings.themeDark",
-  light: "settings.themeLight",
-  ocean: "settings.themeOcean",
-  terracotta: "settings.themeTerracotta",
-};
 
 const LANGUAGE_LABEL_KEYS: Record<SupportedLanguage, string> = {
   en: "settings.languageEnglish",
@@ -122,7 +122,8 @@ export function Wizard() {
           <div>
             <label className="text-sm font-medium">{t("onboarding.themeLabel")}</label>
             <div className="mt-2 grid grid-cols-2 gap-2">
-              {SUPPORTED_THEMES.map((themeOption) => (
+              {/* "custom" needs its color pickers, which live in Settings. */}
+              {SUPPORTED_THEMES.filter((option) => option !== "custom").map((themeOption) => (
                 <button
                   key={themeOption}
                   onClick={() => handleThemeChange(themeOption)}

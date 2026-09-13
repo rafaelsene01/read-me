@@ -154,6 +154,7 @@ pub fn run() {
             config_commands::pick_folder,
             config_commands::complete_onboarding,
             config_commands::update_theme,
+            config_commands::update_custom_theme,
             config_commands::update_language,
             config_commands::update_base_path,
             runtime_commands::prepare_runtime,

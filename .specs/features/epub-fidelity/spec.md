@@ -62,6 +62,8 @@ O plano do dia anterior (`book-illustrations`, AD-058) trazia **só as imagens**
 4. QUANDO o EPUB traz `<script>`, ENTÃO ele **não é executado**.
 5. QUANDO o CSS do livro define cor ou fonte, ENTÃO isso não vaza para a interface do app.
 6. QUANDO um EPUB é processado, ENTÃO cada item do spine (capítulo ou parte pré-textual) começa numa página nova; um capítulo maior que uma página continua dividido em várias. (FID-13, AD-068)
+7. QUANDO uma página de EPUB é exibida, ENTÃO o fundo e a cor do texto SÃO os do tema do app, mesmo que o livro defina outras cores; imagens, fontes, itálico e alinhamento do livro continuam. (FID-14, AD-073 — altera o critério 2 no que diz respeito a cores)
+8. QUANDO um capítulo do EPUB estiliza o próprio `<body>` (classe, `style`, `lang`, `dir`, `id`), ENTÃO a página exibida SHALL manter esse `<body>`, para o alinhamento e o resto do estilo do capítulo valerem como no livro; atributos que executam código (`on*`) SHALL NOT passar. (FID-15, AD-078)
 
 ### P1: Traduzir sem perder a formatação
 
@@ -88,7 +90,7 @@ O plano do dia anterior (`book-illustrations`, AD-058) trazia **só as imagens**
 | Requirement ID | Story | Onde | Status |
 | --- | --- | --- | --- |
 | FID-01 | P1: XHTML do spine preservado, não achatado | `reader/epub.rs` — `extract_epub_html` | implemented — unit |
-| FID-02 | P1: CSS do livro aplicado à página | `reader_commands.rs` — `document` | implemented — **sem prova visual nenhuma**: a montagem é testada como string, e a única tela conferida até agora era o caminho `.txt`. Só reprocessando um EPUB (T7) |
+| FID-02 | P1: CSS do livro aplicado à página — ⚠️ **ALTERADO (AD-073)**: fundo e cor do texto passam a vir do tema (FID-14); o resto do CSS do livro continua | `reader_commands.rs` — `document` | implemented — **sem prova visual nenhuma**: a montagem é testada como string, e a única tela conferida até agora era o caminho `.txt`. Só reprocessando um EPUB (T7) |
 | FID-03 | P1: Todas as imagens do livro extraídas e exibidas | `reader/epub.rs`, `reader_commands.rs` — `inline_images` | implemented — unit |
 | FID-04 | P1: Renderização isolada — script não roda, CSS não vaza | `ReaderPanel.tsx` — `<iframe sandbox="">` | implemented — **sem teste**: não há suíte de frontend. Lacuna, não cobertura |
 | FID-05 | P1: Paginação por blocos, sem cortar tag | `reader/html.rs` — `paginate_blocks` | implemented — unit |
@@ -100,6 +102,8 @@ O plano do dia anterior (`book-illustrations`, AD-058) trazia **só as imagens**
 | FID-11 | P1: `images/` e `styles/` não são idioma | `reader_commands.rs`, `storage::is_reserved_dir` | implemented — unit |
 | FID-12 | P1: PDF continua produzindo texto puro | `reader_commands.rs` — `extract` | implemented — a suíte do caminho de PDF não mudou |
 | FID-13 | P1: Cada item do spine começa numa página nova (AD-068) | `reader/epub.rs` — `EpubHtml.chapters`; `reader/html.rs` — `paginate_chapters` | implemented — units `each_spine_document_is_its_own_chapter_in_spine_order` e `every_chapter_opens_a_page_and_a_long_one_still_spans_several`. **Não medido no livro real:** exige reprocessar *A Última Carta*, o que apaga a tradução `en` (READ-13). O fallback `.txt` (EPUB que não abre estruturalmente) **não** ganhou a quebra |
+| FID-14 | P1: Tema do app força fundo e texto na página do EPUB (AD-073) | `ReaderPanel.tsx` — `<style>` injetado no `srcDoc` a partir de `pageColors()` (`theme.ts`, só hex validado); `readerScript.ts` — destaque do karaokê com texto preto | implemented — **sem teste** (sem suíte de frontend); `npm run build` exit 0. **Não visto na tela:** que um livro com CSS de cor própria obedeça ao tema, e que o destaque siga legível no Escuro, só com o app aberto. Página `.txt` já usava as variáveis do tema e não mudou |
+| FID-15 | P1: A página mantém o `<body>` do capítulo — o alinhamento do livro assume (AD-078) | `reader/epub.rs` — `body_tag` (lista branca `class`/`id`/`lang`/`dir`/`style`, valores re-escapados); `reader/html.rs` — `Chapter`, `paginate_chapters` envolvendo cada página, `page_body`; `reader_commands.rs` — `document`; `reader/translate.rs` — `translate_blocks` | implemented — units `the_body_tag_keeps_what_styles_the_text_and_nothing_that_runs`, `a_page_from_before_the_body_tag_is_read_as_it_always_was`, `a_page_inside_its_chapter_body_keeps_the_body_after_translation` e `each_spine_document_is_its_own_chapter_in_spine_order` estendido (346/0/22). **Não medido no livro real:** exige reprocessar *A Última Carta*, o que apaga a tradução `en` (READ-13); nenhuma página foi vista na tela. Páginas já gravadas continuam sem o `<body>` e centralizadas até reprocessar |
 
 **"implemented" = o código existe e o teste citado passa.** Nenhum EPUB real passou por aqui: a
 T7 (UAT) **não foi executada**, e é ela que responde ao print que abriu a feature.

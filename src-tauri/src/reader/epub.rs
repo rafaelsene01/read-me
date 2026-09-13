@@ -1,5 +1,5 @@
 // SPEC: book-reader (READ-09), book-illustrations (ILLUS-01, ILLUS-08, ILLUS-11),
-//       epub-fidelity (FID-01, FID-03, FID-13), read-aloud (TTS-09, TTS-10, TTS-11),
+//       epub-fidelity (FID-01, FID-03, FID-13, FID-15), read-aloud (TTS-09, TTS-10, TTS-11),
 //       book-library (LIB-13)
 
 use super::html;
@@ -46,7 +46,7 @@ pub fn extract_epub_html(path: &Path) -> Result<EpubHtml, ParseError> {
     let (opf_path, manifest, spine) = open_package(&mut zip)?;
     let base = opf_path.rsplit_once('/').map(|(dir, _)| dir).unwrap_or("");
 
-    let mut chapters: Vec<Vec<String>> = Vec::new();
+    let mut chapters: Vec<html::Chapter> = Vec::new();
     let mut images: Vec<Illustration> = Vec::new();
     let mut css = String::new();
     let mut css_seen: Vec<String> = Vec::new();
@@ -103,7 +103,10 @@ pub fn extract_epub_html(path: &Path) -> Result<EpubHtml, ParseError> {
         // down (FID-13). Measured on the user's "A Última Carta": with the
         // blocks flattened, 53 of its 54 documents began mid-page.
         if !blocks.is_empty() {
-            chapters.push(blocks);
+            chapters.push(html::Chapter {
+                body_tag: body_tag(&xhtml),
+                blocks,
+            });
         }
     }
 
@@ -119,9 +122,45 @@ pub fn extract_epub_html(path: &Path) -> Result<EpubHtml, ParseError> {
 /// An EPUB read as markup: the blocks of each spine document in reading order,
 /// the book's CSS, and the image files the blocks point at.
 pub struct EpubHtml {
-    pub chapters: Vec<Vec<String>>,
+    pub chapters: Vec<html::Chapter>,
     pub css: String,
     pub images: Vec<Illustration>,
+}
+
+/// The attributes of a chapter's `<body>` that style it, and only those.
+const BODY_ATTRS: [&str; 5] = ["class", "id", "lang", "dir", "style"];
+
+/// The chapter's own `<body ...>` tag, rebuilt from the attributes that style
+/// the text (FID-15).
+///
+/// Dropping it is what centered a whole book: "A Última Carta" declares
+/// `body { text-align: center }` and puts `class="class8"` - `text-align:
+/// justify` - on the body of 29 of its 57 chapters. With only the inner markup
+/// kept, every paragraph inherited the center. Rebuilt from a whitelist rather
+/// than copied: an `onload` on the book's body must not reach a frame that
+/// runs scripts, and every value is escaped on the way back out.
+pub(crate) fn body_tag(xhtml: &str) -> String {
+    let lower = xhtml.to_ascii_lowercase();
+    let Some(open) = lower.find("<body") else {
+        return "<body>".to_string();
+    };
+    let Some(gt) = xhtml[open..].find('>').map(|i| open + i) else {
+        return "<body>".to_string();
+    };
+    let tag_body = xhtml[open + 1..gt].trim_end_matches('/');
+    let mut out = String::from("<body");
+    for name in BODY_ATTRS {
+        if let Some(value) = attr(tag_body, name) {
+            let escaped = value
+                .replace('&', "&amp;")
+                .replace('"', "&quot;")
+                .replace('<', "&lt;")
+                .replace('>', "&gt;");
+            out.push_str(&format!(" {name}=\"{escaped}\""));
+        }
+    }
+    out.push('>');
+    out
 }
 
 /// The inner markup of `<body>`, or the whole document when there is no body
@@ -762,16 +801,47 @@ mod tests {
                     "OEBPS/a.xhtml",
                     "<html><body><p>a1</p><p>a2</p></body></html>",
                 ),
-                ("OEBPS/b.xhtml", "<html><body><p>b1</p></body></html>"),
+                (
+                    "OEBPS/b.xhtml",
+                    "<html><body class=\"class8\"><p>b1</p></body></html>",
+                ),
             ],
         );
 
         let book = extract_epub_html(&path).unwrap();
 
+        let blocks: Vec<Vec<String>> = book.chapters.iter().map(|c| c.blocks.clone()).collect();
         assert_eq!(
-            book.chapters,
+            blocks,
             vec![vec!["<p>b1</p>".to_string()], vec!["<p>a1</p>".to_string(), "<p>a2</p>".to_string()]]
         );
+        // FID-15: cada capítulo leva o body dele, na mesma ordem.
+        let tags: Vec<&str> = book.chapters.iter().map(|c| c.body_tag.as_str()).collect();
+        assert_eq!(tags, vec!["<body class=\"class8\">", "<body>"]);
+    }
+
+    #[test]
+    fn the_body_tag_keeps_what_styles_the_text_and_nothing_that_runs() {
+        // FID-15. `class8` é o que devolve o `justify` do livro real; `onload`
+        // e atributos desconhecidos não passam, e aspas no valor não fecham o
+        // atributo.
+        let xhtml = r#"<html><head><title>t</title></head><body class="class8" onload="alert(1)" data-x="y" lang="pt-BR" style="margin:0" id="c1"><p>x</p></body></html>"#;
+        assert_eq!(
+            body_tag(xhtml),
+            r#"<body class="class8" id="c1" lang="pt-BR" style="margin:0">"#
+        );
+        assert_eq!(body_tag("<p>sem body</p>"), "<body>");
+        // Entidades no valor são decodificadas por `attr` - e têm de sair
+        // escapadas de novo, senão `&quot;` viraria uma aspa que fecha o
+        // atributo e abre um `onload` no quadro que roda script.
+        assert_eq!(
+            body_tag(r#"<body class="a&quot; onload=&quot;x()&quot; &lt;script&gt;"><p>x</p></body>"#),
+            r#"<body class="a&quot; onload=&quot;x()&quot; &lt;script&gt;">"#
+        );
+        // Um `>` cru dentro do valor corta a tag no primeiro `>`, como todo
+        // leitor linear deste módulo (`body_of`, `elements`): o atributo fica
+        // sem aspa de fechamento, é descartado, e o que sai é um body limpo.
+        assert_eq!(body_tag(r#"<body class="a><script>x</script>">"#), "<body>");
     }
 
     #[test]

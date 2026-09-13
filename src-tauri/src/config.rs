@@ -1,3 +1,5 @@
+// SPEC: settings-storage-i18n (CFG-01, CFG-05, CFG-06, CFG-09), read-aloud (TTS-23, TTS-32)
+
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -33,6 +35,31 @@ pub struct AppConfig {
     pub tts_voices: std::collections::BTreeMap<String, String>,
     #[serde(default = "default_speed")]
     pub tts_speed: f32,
+    /// The custom theme's colors (CFG-09). `#[serde(default)]` for the same
+    /// reason as the fields above. Kept when the user switches back to a
+    /// preset, so choosing "custom" again brings their colors back.
+    #[serde(default)]
+    pub custom_theme: Option<CustomTheme>,
+}
+
+/// The three colors a user picks for the custom theme (CFG-09). Everything
+/// else on screen is mixed from them in `themes.css`.
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+pub struct CustomTheme {
+    pub background: String,
+    pub text: String,
+    pub accent: String,
+}
+
+/// `#rrggbb` and nothing else (CFG-09).
+///
+/// A guard on a trust boundary, not decoration: the value is written into CSS
+/// on the app's root and inside the book's iframe, which runs scripts - a
+/// "color" like `red}</style><script>` would be markup there.
+pub fn is_hex_color(value: &str) -> bool {
+    value.len() == 7
+        && value.starts_with('#')
+        && value[1..].bytes().all(|b| b.is_ascii_hexdigit())
 }
 
 /// Normal speed. The scale is the reader's: above 1 is faster.
@@ -55,6 +82,7 @@ impl Default for AppConfig {
             skipped_version: None,
             tts_voices: std::collections::BTreeMap::new(),
             tts_speed: default_speed(),
+            custom_theme: None,
         }
     }
 }
@@ -330,5 +358,51 @@ mod tests {
         let round: AppConfig = serde_json::from_str(&serde_json::to_string(&cfg).unwrap()).unwrap();
         assert!(!round.auto_update_check);
         assert_eq!(round.skipped_version.as_deref(), Some("1.2.3"));
+    }
+
+    #[test]
+    fn a_config_written_before_the_custom_theme_still_deserializes() {
+        // CFG-09. A theme that no longer exists is kept as written here: mapping
+        // `terracotta` to `sepia` is `normalizeTheme` in the frontend, which
+        // rewrites the config on the first boot (AD-073).
+        let legacy = r#"{
+            "base_path": "D:/dados",
+            "theme": "terracotta",
+            "language": "pt",
+            "onboarding_completed": true
+        }"#;
+        let cfg: AppConfig = serde_json::from_str(legacy).unwrap();
+        assert!(cfg.custom_theme.is_none());
+        assert_eq!(cfg.theme, "terracotta");
+
+        let mut with_colors = cfg.clone();
+        with_colors.custom_theme = Some(CustomTheme {
+            background: "#f4ecd8".into(),
+            text: "#5b4636".into(),
+            accent: "#a0522d".into(),
+        });
+        let round: AppConfig =
+            serde_json::from_str(&serde_json::to_string(&with_colors).unwrap()).unwrap();
+        assert_eq!(round.custom_theme, with_colors.custom_theme);
+    }
+
+    #[test]
+    fn only_a_six_digit_hex_is_a_custom_color() {
+        // CFG-09: a "cor" é escrita dentro de um <style> no iframe do livro.
+        for good in ["#000000", "#FFFFFF", "#a0522d"] {
+            assert!(is_hex_color(good), "recusou {good}");
+        }
+        for bad in [
+            "",
+            "#fff",
+            "000000",
+            "#12345g",
+            "#1234567",
+            "red",
+            "#1}</style><script>",
+            "#é1234",
+        ] {
+            assert!(!is_hex_color(bad), "aceitou {bad:?}");
+        }
     }
 }

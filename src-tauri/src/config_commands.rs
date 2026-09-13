@@ -1,3 +1,5 @@
+// SPEC: settings-storage-i18n (CFG-01, CFG-05, CFG-06, CFG-07, CFG-09)
+
 use crate::config::{self, AppConfig};
 use crate::db::{self, DbState};
 use std::path::PathBuf;
@@ -70,6 +72,28 @@ pub fn complete_onboarding(
 pub fn update_theme(app: AppHandle, theme: String) -> Result<AppConfig, String> {
     let mut cfg = config::load_config(&app)?.ok_or_else(|| "Configuração não encontrada".to_string())?;
     cfg.theme = theme;
+    config::save_config(&app, &cfg)?;
+    Ok(cfg)
+}
+
+/// Saves the custom theme's colors and makes it the active theme (CFG-09).
+/// Anything that is not `#rrggbb` is refused before it reaches the config, and
+/// from there the CSS - see `config::is_hex_color`.
+#[tauri::command]
+pub fn update_custom_theme(
+    app: AppHandle,
+    background: String,
+    text: String,
+    accent: String,
+) -> Result<AppConfig, String> {
+    for color in [&background, &text, &accent] {
+        if !config::is_hex_color(color) {
+            return Err(format!("cor inválida: {color:?} (esperado #rrggbb)"));
+        }
+    }
+    let mut cfg = config::load_config(&app)?.ok_or_else(|| "Configuração não encontrada".to_string())?;
+    cfg.theme = "custom".to_string();
+    cfg.custom_theme = Some(config::CustomTheme { background, text, accent });
     config::save_config(&app, &cfg)?;
     Ok(cfg)
 }

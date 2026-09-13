@@ -1,4 +1,4 @@
-// SPEC: epub-fidelity (FID-05, FID-06, FID-07, FID-08, FID-13), read-aloud (TTS-02)
+// SPEC: epub-fidelity (FID-05, FID-06, FID-07, FID-08, FID-13, FID-15), read-aloud (TTS-02)
 
 //! Working with the book's own markup instead of throwing it away.
 //!
@@ -200,11 +200,44 @@ pub fn paginate_blocks(blocks: &[String]) -> Vec<String> {
     pages
 }
 
+/// One spine document: its blocks, and the `<body>` tag they sat in (FID-15).
+pub struct Chapter {
+    pub body_tag: String,
+    pub blocks: Vec<String>,
+}
+
 /// Paginates each chapter on its own, so every chapter opens a page (FID-13).
 /// A long chapter still spans several pages; what can no longer happen is a
 /// page holding the end of one chapter and the start of the next.
-pub fn paginate_chapters(chapters: &[Vec<String>]) -> Vec<String> {
-    chapters.iter().flat_map(|chapter| paginate_blocks(chapter)).collect()
+///
+/// Each page is written **inside its chapter's `<body>` tag** (FID-15): a page
+/// only ever holds one chapter, so the tag is known, and it is what carries the
+/// chapter's alignment. Whoever splits a page into blocks goes through
+/// [`page_body`] first - `split_blocks` on the whole page would see one block.
+pub fn paginate_chapters(chapters: &[Chapter]) -> Vec<String> {
+    chapters
+        .iter()
+        .flat_map(|chapter| {
+            paginate_blocks(&chapter.blocks)
+                .into_iter()
+                .map(move |page| format!("{}\n{page}\n</body>", chapter.body_tag))
+        })
+        .collect()
+}
+
+/// A page's own `<body ...>` tag and the markup inside it.
+///
+/// `None` is a page written before FID-15: a bare list of blocks, which stays
+/// readable and translatable exactly as it was.
+pub fn page_body(page: &str) -> (Option<&str>, &str) {
+    let trimmed = page.trim_start();
+    let is_body = trimmed
+        .get(..5)
+        .is_some_and(|start| start.eq_ignore_ascii_case("<body"));
+    let Some(gt) = trimmed.find('>').filter(|_| is_body) else {
+        return (None, page);
+    };
+    (Some(&trimmed[..=gt]), super::epub::body_of(trimmed))
 }
 
 /// A block taken apart for translation: the outer tag stays, the inline tags
@@ -458,22 +491,45 @@ mod tests {
         // FID-13. Os tres capitulos juntos cabem numa pagina so por tamanho;
         // o terceiro, sozinho, passa do teto.
         let long = "palavra ".repeat(400);
+        let chapter = |tag: &str, blocks: Vec<String>| Chapter {
+            body_tag: tag.to_string(),
+            blocks,
+        };
         let chapters = vec![
-            vec!["<p>fim do um</p>".to_string()],
-            vec!["<p>Capítulo dois</p>".to_string(), "<p>curto</p>".to_string()],
-            (0..2).map(|i| format!("<p>tres {i} {long}</p>")).collect(),
+            chapter("<body>", vec!["<p>fim do um</p>".to_string()]),
+            chapter(
+                "<body class=\"class8\">",
+                vec!["<p>Capítulo dois</p>".to_string(), "<p>curto</p>".to_string()],
+            ),
+            chapter("<body>", (0..2).map(|i| format!("<p>tres {i} {long}</p>")).collect()),
         ];
 
         let pages = paginate_chapters(&chapters);
 
         assert_eq!(pages.len(), 4, "{pages:?}");
-        assert_eq!(pages[0], "<p>fim do um</p>");
-        assert!(
-            pages[1].starts_with("<p>Capítulo dois</p>"),
+        let inner: Vec<Vec<String>> = pages.iter().map(|p| split_blocks(page_body(p).1)).collect();
+        assert_eq!(inner[0], vec!["<p>fim do um</p>"]);
+        assert_eq!(
+            inner[1].first().map(String::as_str),
+            Some("<p>Capítulo dois</p>"),
             "o capitulo dois comecou no meio de uma pagina: {:?}",
             pages[1]
         );
-        assert!(pages[2].starts_with("<p>tres 0") && pages[3].starts_with("<p>tres 1"));
+        assert!(inner[2][0].starts_with("<p>tres 0") && inner[3][0].starts_with("<p>tres 1"));
+        // FID-15: a página carrega o body do capítulo dela, e só dele.
+        assert_eq!(page_body(&pages[1]).0, Some("<body class=\"class8\">"));
+        assert_eq!(page_body(&pages[0]).0, Some("<body>"));
+    }
+
+    #[test]
+    fn a_page_from_before_the_body_tag_is_read_as_it_always_was() {
+        // FID-15 x FID-09: página gravada antes desta mudança não tem `<body>`
+        // e continua sendo a lista de blocos inteira.
+        let old = "<p>um</p>\n\n<p>dois</p>";
+        assert_eq!(page_body(old), (None, old));
+        assert_eq!(split_blocks(page_body(old).1), vec!["<p>um</p>", "<p>dois</p>"]);
+        // E um bloco que só começa com "<b" não é confundido com o body.
+        assert_eq!(page_body("<b>x</b>").0, None);
     }
 
     #[test]

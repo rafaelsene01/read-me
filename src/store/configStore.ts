@@ -1,8 +1,10 @@
+// SPEC: settings-storage-i18n (CFG-05, CFG-06, CFG-07, CFG-09)
+
 import { create } from "zustand";
 import { configApi } from "../lib/configApi";
 import { applyLanguage } from "../i18n";
 import { applyTheme, normalizeTheme } from "../lib/theme";
-import type { AppConfig } from "../types";
+import type { AppConfig, CustomTheme } from "../types";
 
 interface ConfigState {
   config: AppConfig | null;
@@ -16,11 +18,13 @@ interface ConfigState {
   loadConfig: () => Promise<void>;
   completeOnboarding: (basePath: string, theme: string, language: string) => Promise<void>;
   setTheme: (theme: string) => Promise<void>;
+  /** Applies the colors now and persists them, making "custom" the theme. */
+  setCustomTheme: (colors: CustomTheme) => Promise<void>;
   setLanguage: (language: string) => Promise<void>;
   setBasePath: (basePath: string) => Promise<void>;
 }
 
-export const useConfigStore = create<ConfigState>((set) => ({
+export const useConfigStore = create<ConfigState>((set, get) => ({
   config: null,
   status: "loading",
   error: null,
@@ -32,7 +36,7 @@ export const useConfigStore = create<ConfigState>((set) => ({
       if (config && config.onboarding_completed) {
         // Theme and language are still the user's choice even when the data
         // folder is gone, so apply them before deciding where to send them.
-        applyTheme(config.theme);
+        applyTheme(config.theme, config.custom_theme);
         applyLanguage(config.language);
 
         // A theme that was renamed stays renamed on disk too, otherwise the
@@ -62,14 +66,20 @@ export const useConfigStore = create<ConfigState>((set) => ({
 
   completeOnboarding: async (basePath, theme, language) => {
     const config = await configApi.completeOnboarding(basePath, theme, language);
-    applyTheme(config.theme);
+    applyTheme(config.theme, config.custom_theme);
     applyLanguage(config.language);
     set({ config, status: "ready", missingBasePath: null });
   },
 
   setTheme: async (theme) => {
-    applyTheme(theme);
+    applyTheme(theme, get().config?.custom_theme);
     const config = await configApi.updateTheme(theme);
+    set({ config });
+  },
+
+  setCustomTheme: async (colors) => {
+    applyTheme("custom", colors);
+    const config = await configApi.updateCustomTheme(colors);
     set({ config });
   },
 

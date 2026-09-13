@@ -1,4 +1,4 @@
-// SPEC: read-aloud (TTS-03, TTS-12, TTS-17, TTS-18, TTS-19)
+// SPEC: read-aloud (TTS-03, TTS-12, TTS-17, TTS-18, TTS-19), epub-fidelity (FID-14)
 
 /**
  * The only script that runs inside the book's iframe.
@@ -135,8 +135,10 @@ export const READER_SCRIPT = String.raw`
 })();
 `;
 
-/** Painted by the highlight API; the class is the fallback's twin. */
+/** Painted by the highlight API; the class is the fallback's twin. The text on
+ *  the mark is black, not inherited: with a dark theme forced on the page
+ *  (FID-14) inherited text is white, and white on this yellow is unreadable. */
 export const READER_SCRIPT_CSS = String.raw`
-::highlight(readaloud){background:#ffe58a;color:inherit}
-.readaloud-mark{background:#ffe58a}
+::highlight(readaloud){background:#ffe58a;color:#000}
+.readaloud-mark{background:#ffe58a;color:#000}
 `;

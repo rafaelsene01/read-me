@@ -1,4 +1,4 @@
-// SPEC: book-library (LIB-09, LIB-10, LIB-13), book-reader (READ-01, READ-02, READ-03, READ-04, READ-05)
+// SPEC: book-library (LIB-09, LIB-10, LIB-13, LIB-15), book-reader (READ-01, READ-02, READ-03, READ-04, READ-05)
 
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -25,6 +25,10 @@ interface Props {
   progress?: BookStatusEvent;
   isBusy: boolean;
   isEditing: boolean;
+  /** `card` is the Library's grid: the cover, turning on hover into what the
+   *  row shows (LIB-15). One component for both, so the status and the actions
+   *  have a single definition. */
+  variant?: "row" | "card";
   onRemove: () => void;
   onProcess: () => void;
   onCancel: () => void;
@@ -42,7 +46,15 @@ function formatSize(bytes: number) {
 
 /** The book's cover, fetched as bytes like the reader's illustrations (the
  *  asset protocol is off). No cover, or any failure, shows the icon (LIB-13). */
-function BookCover({ bookId }: { bookId: string }) {
+function BookCover({
+  bookId,
+  className,
+  iconSize,
+}: {
+  bookId: string;
+  className: string;
+  iconSize: number;
+}) {
   const [url, setUrl] = useState<string | null>(null);
 
   useEffect(() => {
@@ -65,8 +77,14 @@ function BookCover({ bookId }: { bookId: string }) {
   }, [bookId]);
 
   return (
-    <div className="flex h-14 w-10 shrink-0 items-center justify-center overflow-hidden rounded-sm bg-[var(--bg-elevated)] text-[var(--text-secondary)]">
-      {url ? <img src={url} alt="" className="h-full w-full object-cover" /> : <BookOpen size={16} />}
+    <div
+      className={`flex shrink-0 items-center justify-center overflow-hidden rounded-sm bg-[var(--bg-elevated)] text-[var(--text-secondary)] ${className}`}
+    >
+      {url ? (
+        <img src={url} alt="" className="h-full w-full object-cover" />
+      ) : (
+        <BookOpen size={iconSize} />
+      )}
     </div>
   );
 }
@@ -76,6 +94,7 @@ export function BookRow({
   progress,
   isBusy,
   isEditing,
+  variant = "row",
   onRemove,
   onProcess,
   onCancel,
@@ -91,101 +110,148 @@ export function BookRow({
   const translation =
     isBusy && progress && progress.language !== null && progress.total > 0 ? progress : null;
 
+  const meta = (
+    <p className="text-xs text-[var(--text-secondary)]">
+      {book.format.toUpperCase()} · {formatSize(book.size_bytes)} ·{" "}
+      {!readable
+        ? t("library.statusUnsupported")
+        : isReady
+          ? t("library.pages", { pages: book.page_count })
+          : t(STATUS_LABEL_KEY[book.status])}
+    </p>
+  );
+
+  const actions = (
+    <div className="flex shrink-0 flex-wrap items-center gap-1.5">
+      {isBusy ? (
+        <button
+          onClick={onCancel}
+          className="flex items-center gap-1.5 rounded-md border border-[var(--border-color)] px-2 py-1 text-xs hover:bg-[var(--bg-elevated)]"
+        >
+          <X size={14} />
+          {t("library.cancel")}
+        </button>
+      ) : isReady ? (
+        <>
+          <button
+            onClick={onRead}
+            className="flex items-center gap-1.5 rounded-md bg-[var(--accent)] px-2 py-1 text-xs font-medium text-[var(--accent-fg)] hover:bg-[var(--accent-hover)]"
+          >
+            <BookOpen size={14} />
+            {t("library.read")}
+          </button>
+          <button
+            onClick={onEdit}
+            aria-expanded={isEditing}
+            className="rounded-md p-1.5 text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
+            title={t("library.edit")}
+          >
+            <Pencil size={14} />
+          </button>
+        </>
+      ) : (
+        // READ-03: no button at all for MOBI/AZW/AZW3 — the label above is
+        // what the row says instead, and it is readable without clicking.
+        readable && (
+          <button
+            onClick={onProcess}
+            className="flex items-center gap-1.5 rounded-md bg-[var(--accent)] px-2 py-1 text-xs font-medium text-[var(--accent-fg)] hover:bg-[var(--accent-hover)]"
+          >
+            <Play size={14} />
+            {t("library.process")}
+          </button>
+        )
+      )}
+      <button
+        onClick={onRemove}
+        className="rounded-md p-1.5 text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
+        title={t("library.remove")}
+      >
+        <Trash2 size={14} />
+      </button>
+    </div>
+  );
+
+  const busy = isBusy && (
+    <div className="mt-2">
+      {translation && (
+        <div className="h-1.5 w-full overflow-hidden rounded-full bg-[var(--bg-elevated)]">
+          <div
+            className="h-full bg-[var(--accent)] transition-all"
+            style={{
+              width: `${Math.min(100, Math.round((translation.done / translation.total) * 100))}%`,
+            }}
+          />
+        </div>
+      )}
+      <p className="mt-1 text-xs text-[var(--text-secondary)]">
+        {translation
+          ? t("library.translating", {
+              language: translation.language,
+              done: translation.done,
+              total: translation.total,
+            })
+          : t("library.processing")}
+      </p>
+    </div>
+  );
+
+  // A failed translation leaves the book `ready` on purpose (T6), so this
+  // line only ever describes extraction or pagination.
+  const failure = book.status === "error" && book.error_message && (
+    <p className="mt-1 text-xs text-red-500">{book.error_message}</p>
+  );
+
+  if (variant === "card") {
+    // Busy or editing keeps the back turned: the progress and the open editor
+    // must not vanish behind the cover the moment the mouse leaves. The class
+    // names are spelled out in full on purpose - Tailwind only generates what
+    // it finds written in the source, never a class built by interpolation.
+    const pinned = isBusy || isEditing;
+    return (
+      <div className="group aspect-[2/3] [perspective:1000px]">
+        <div
+          className={`relative h-full w-full transition-transform duration-500 [transform-style:preserve-3d] group-hover:[transform:rotateY(180deg)] group-focus-within:[transform:rotateY(180deg)] ${
+            pinned ? "[transform:rotateY(180deg)]" : ""
+          }`}
+        >
+          {/* Front: only the cover. It stops taking the mouse once turned, or
+              it would sit over the buttons of the back. */}
+          <div
+            className={`absolute inset-0 overflow-hidden rounded-md border border-[var(--border-color)] [backface-visibility:hidden] group-hover:pointer-events-none group-focus-within:pointer-events-none ${
+              pinned ? "pointer-events-none" : ""
+            }`}
+          >
+            <BookCover bookId={book.id} className="h-full w-full" iconSize={32} />
+          </div>
+          <div className="absolute inset-0 flex flex-col gap-1 overflow-y-auto rounded-md border border-[var(--border-color)] bg-[var(--bg-elevated)] p-3 [backface-visibility:hidden] [transform:rotateY(180deg)]">
+            <p className="line-clamp-3 break-words text-sm font-medium" title={book.filename}>
+              {book.filename}
+            </p>
+            {meta}
+            {busy}
+            {failure}
+            <div className="mt-auto pt-2">{actions}</div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="rounded-md border border-[var(--border-color)] px-3 py-2">
       <div className="flex items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-3">
-          <BookCover bookId={book.id} />
+          <BookCover bookId={book.id} className="h-14 w-10" iconSize={16} />
           <div className="min-w-0">
             <p className="truncate text-sm font-medium">{book.filename}</p>
-            <p className="text-xs text-[var(--text-secondary)]">
-              {book.format.toUpperCase()} · {formatSize(book.size_bytes)} ·{" "}
-              {!readable
-                ? t("library.statusUnsupported")
-                : isReady
-                  ? t("library.pages", { pages: book.page_count })
-                  : t(STATUS_LABEL_KEY[book.status])}
-            </p>
+            {meta}
           </div>
         </div>
-
-        <div className="flex shrink-0 items-center gap-1.5">
-          {isBusy ? (
-            <button
-              onClick={onCancel}
-              className="flex items-center gap-1.5 rounded-md border border-[var(--border-color)] px-2 py-1 text-xs hover:bg-[var(--bg-elevated)]"
-            >
-              <X size={14} />
-              {t("library.cancel")}
-            </button>
-          ) : isReady ? (
-            <>
-              <button
-                onClick={onRead}
-                className="flex items-center gap-1.5 rounded-md bg-[var(--accent)] px-2 py-1 text-xs font-medium text-[var(--accent-fg)] hover:bg-[var(--accent-hover)]"
-              >
-                <BookOpen size={14} />
-                {t("library.read")}
-              </button>
-              <button
-                onClick={onEdit}
-                aria-expanded={isEditing}
-                className="rounded-md p-1.5 text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
-                title={t("library.edit")}
-              >
-                <Pencil size={14} />
-              </button>
-            </>
-          ) : (
-            // READ-03: no button at all for MOBI/AZW/AZW3 — the label above is
-            // what the row says instead, and it is readable without clicking.
-            readable && (
-              <button
-                onClick={onProcess}
-                className="flex items-center gap-1.5 rounded-md bg-[var(--accent)] px-2 py-1 text-xs font-medium text-[var(--accent-fg)] hover:bg-[var(--accent-hover)]"
-              >
-                <Play size={14} />
-                {t("library.process")}
-              </button>
-            )
-          )}
-          <button
-            onClick={onRemove}
-            className="rounded-md p-1.5 text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
-            title={t("library.remove")}
-          >
-            <Trash2 size={14} />
-          </button>
-        </div>
+        {actions}
       </div>
-
-      {isBusy && (
-        <div className="mt-2">
-          {translation && (
-            <div className="h-1.5 w-full overflow-hidden rounded-full bg-[var(--bg-elevated)]">
-              <div
-                className="h-full bg-[var(--accent)] transition-all"
-                style={{ width: `${Math.min(100, Math.round((translation.done / translation.total) * 100))}%` }}
-              />
-            </div>
-          )}
-          <p className="mt-1 text-xs text-[var(--text-secondary)]">
-            {translation
-              ? t("library.translating", {
-                  language: translation.language,
-                  done: translation.done,
-                  total: translation.total,
-                })
-              : t("library.processing")}
-          </p>
-        </div>
-      )}
-
-      {/* A failed translation leaves the book `ready` on purpose (T6), so this
-          line only ever describes extraction or pagination. */}
-      {book.status === "error" && book.error_message && (
-        <p className="mt-1 text-xs text-red-500">{book.error_message}</p>
-      )}
+      {busy}
+      {failure}
     </div>
   );
 }

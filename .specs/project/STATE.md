@@ -7,6 +7,73 @@
 
 ## Recent Decisions (Last 60 days)
 
+### AD-078: O texto centralizado não era código forçado — a extração jogava fora o `<body>` do capítulo (2026-09-12)
+
+**Pedido do usuário:** o leitor parecia centralizar os textos; se fosse código forçado, remover e deixar o alinhamento do EPUB assumir.
+
+**Causa, medida no livro real (só leitura):** nenhum CSS do app define `text-align`. O próprio *A Última Carta* declara `body { text-align: center }`, e cada capítulo corrige isso na tag do body: `<body class="class8">`, com `.class8 { text-align: justify }`, em 29 dos 57 itens do spine. Os parágrafos (`.class_s4e`) não definem alinhamento e herdam. `extract_epub_html` guardava só o **conteúdo** do `<body>` (`body_of`), e a página era montada num `<body>` sem classe — então tudo herdava o `center`.
+
+**Decisão (FID-15):** cada capítulo leva a própria tag `<body>`, reconstruída a partir de uma lista branca (`class`, `id`, `lang`, `dir`, `style`) com os valores re-escapados — um `onload` do livro não chega ao quadro que roda script. Como cada página pertence a um só capítulo (FID-13), a página passa a ser gravada **dentro** dessa tag. Quem divide a página em blocos agora passa por `html::page_body` antes: o `document` do leitor não envolve de novo, e a tradução traduz os blocos de dentro e devolve a mesma tag. Página gravada antes desta mudança não tem a tag e segue funcionando como antes.
+
+**Custo aceito:** livro já processado só muda depois de reprocessar, e reprocessar apaga as traduções (READ-13) — no *A Última Carta*, a pasta `en`.
+
+**Gates:** `cargo test --lib` **346 / 0 / 22** (+3). A primeira rodada deu **345 / 1**: a asserção de escape do teste estava errada (um `>` cru no valor corta a tag no primeiro `>`, como todo leitor linear do módulo, e sai um `<body>` limpo) — o teste foi corrigido para exercitar o escape de verdade, com entidades, e manter a limitação documentada. **Não verificado:** nenhum livro reprocessado, nada visto na tela.
+
+### AD-077: Nome de ilustração aceita 4 a 6 dígitos — um EPUB com 26.787 imagens falhava na 10.000ª (2026-09-12)
+
+**Defeito relatado:** processar um EPUB terminou em `not an illustration name: "10000.png"`.
+
+**Causa, medida:** `image_name` formata `{index:04}`, que só garante o **mínimo** de quatro dígitos; `is_image_name` exigia **exatamente** quatro. Na imagem 10.000 o nome gerado virou `10000.png`, e o `write_images` o recusou no caminho para o disco, derrubando o processamento inteiro. O livro é o *Refactoring* do usuário: **26.787 `<img>` no spine, 26.787 arquivos distintos** (contado no EPUB, só leitura) — não é repetição de imagem, são páginas convertidas.
+
+**Decisão:** o guarda passa a aceitar de 4 a 6 dígitos (até 999.999 imagens), e o marcador do `ReaderPanel` acompanha (`\d{4,6}`). Continua recusando qualquer coisa que não seja só dígitos, ponto e extensão curta. Livros já processados não mudam: seus nomes de 4 dígitos continuam válidos. **Custo aceito, marcado com `ponytail:`:** acima de 9999 a ordem alfabética do explorador deixa de ser a ordem de leitura.
+
+**Achado, não corrigido — fora do pedido:** o extrator grava uma cópia por `<img>`, mesmo quando o arquivo é o mesmo. Medido: *A Última Carta* tem 104 `<img>` para 22 arquivos, e o *TDD by Example* tem 68 para 14 (um `pixel.gif` repetido 55 vezes). Deduplicar por caminho do zip economiza disco, mas não teria evitado este erro.
+
+**Gates:** `cargo test --lib` **343 / 0 / 22** (+2), `npm run build` exit 0. **Não verificado:** o *Refactoring* não foi reprocessado, e os dois testes novos não foram rodados contra o guarda antigo para provar que falhariam.
+
+### AD-076: Tamanho da fonte no leitor por `zoom`, de 70% a 200% (2026-09-12)
+
+**Pedido do usuário:** opção de aumentar e diminuir a fonte dentro da leitura.
+
+**Decisão (READ-34):** botões "A" menor e "A" maior no cabeçalho do leitor, passo de 10%, entre 70% e 200%, com o percentual entre eles. Na página EPUB o ajuste é `body{zoom}` injetado no `srcDoc`, **não** `font-size`: um livro que declara tamanhos em `px` ignora o tamanho da raiz, e o `zoom` escala qualquer unidade — o texto refaz as linhas na largura do quadro e as imagens continuam dentro do `max-width: 100%`. Na página de texto puro, o tamanho vai inline, com altura de linha relativa para não sobrepor. A preferência fica no `localStorage`, como a visualização da Biblioteca.
+
+**Custo aceito:** trocar o tamanho recria o iframe da página (mesma via da AD-075), então uma marcação de leitura em voz alta em curso é redesenhada a partir da próxima frase.
+
+**Gates:** `npm run build` exit 0, i18n **237/237**. **Não verificado:** nada visto na tela.
+
+### AD-075: Página em branco ao voltar para a leitura — o iframe passa a ser recriado a cada documento (2026-09-12)
+
+**Defeito relatado:** navegando entre a Biblioteca e uma leitura, às vezes a página aparecia inteira em branco, e só virar a página e voltar corrigia.
+
+**Causa, deduzida lendo o código — não reproduzida:** a `key` do iframe era `livro-página-idioma`. Reabrir a mesma leitura (voltar pela lateral, ou "Ler" no livro já naquela página) mantém os três: `openBook` limpa o texto e carrega a mesma página, e o **mesmo elemento** tinha o `srcdoc` trocado de página → documento vazio → página. Virar a página muda a `key` e monta um iframe novo — exatamente o que o usuário fazia para consertar, e é o que sustenta a hipótese.
+
+**Decisão:** a `key` do iframe passa a ser um contador incrementado a cada documento novo (`useMemo` sobre o `srcDoc`), e nenhum iframe é montado enquanto o texto está vazio. O `srcdoc` de um iframe vivo nunca mais é trocado.
+
+**Gates:** `npm run build` exit 0. **Não verificado:** o cenário que falhava não foi repetido com o app aberto — a correção remove o caminho suspeito, e só a tela confirma que era ele.
+
+### AD-074: Biblioteca em Lista ou Cards; o card é a capa e gira no hover (2026-09-12)
+
+**Pedido do usuário:** escolher entre lista e card; no modo card, um spinner para o tamanho; o card é a capa do livro e, no hover, uma animação mostra os dados e as opções.
+
+**Decisões (LIB-14, LIB-15):**
+- "Spinner" lido como nesta base desde a AD-029: campo numérico com setas (`input type="number"`, 100–360 px, passo 20). Grid com colunas do tamanho exato escolhido.
+- Visualização e tamanho ficam em `localStorage` (`readme-library-view`, `readme-library-card-size`), com `try/catch`: é preferência de tela, não configuração que precise sobreviver a trocar de máquina.
+- O card é uma **variante** do `BookRow` e não um componente novo: status, ações, progresso e erro têm uma definição só. A animação é um giro 3D só em CSS; o card também gira com foco de teclado, e fica virado enquanto o livro processa ou está em edição.
+- No modo card, o editor (`BookEditPanel`) abre em largura cheia abaixo do grid; o card do livro editado fica virado, o que responde "qual livro" como a READ-24 exige.
+
+**Gates:** `npm run build` exit 0; o CSS gerado contém as regras do giro (`rotateY(180deg)` ×3, `backface-visibility` ×2). **Não verificado:** a animação e o clique nos botões do verso nunca foram vistos; sem suíte de frontend.
+
+### AD-073: Temas Claro, Escuro, Sépia e Personalizado — e o tema vale para a página do EPUB (2026-09-12)
+
+**Pedido do usuário:** Claro (fundo branco, texto preto), Escuro (fundo preto/cinza-escuro, texto branco), Sépia (tons amarelados que cansam menos), o tema aplicado ao EPUB, e um tema personalizado. Quatro perguntas respondidas: Oceano e Terracota **saem**; na página, o tema **força fundo e texto** mesmo contra as cores do livro; o personalizado tem **fundo, texto e destaque**; e é **o mesmo tema** para o app e para o leitor.
+
+**Decisões:**
+- **Paletas** reescritas em `themes.css`. Migração em `normalizeTheme`: `terracotta` (e o antigo `claude`) → `sepia`, `ocean` → `dark` — a config é regravada no primeiro boot pelo caminho que já existia. Revoga a AD-013.
+- **Personalizado (CFG-09):** `AppConfig.custom_theme` com `#[serde(default)]` e comando `update_custom_theme`. As três cores são escritas inline no `<html>`; lateral, bordas e texto secundário vêm de `color-mix` em CSS, sem código de derivação. Cor é validada como `#rrggbb` **nos dois lados** (`config::is_hex_color`, `isHexColor`): ela é escrita dentro de um `<style>` no iframe do livro, que roda scripts — texto arbitrário ali seria marcação. Os seletores nativos (`input type="color"`) pintam na hora e gravam com 400 ms de atraso.
+- **Página do EPUB (FID-14, altera FID-02 quanto a cor):** o `ReaderPanel` injeta `html,body{background;color} !important` e `body *{color:inherit;background-color:transparent} !important` a partir das variáveis do tema, excluindo o span de fallback do karaokê. O destaque do karaokê passou a ter texto preto: com o tema Escuro forçado, o texto herdado seria branco sobre amarelo.
+
+**Gates:** `cargo test --lib` **341 / 0 / 22** (+2 em `config.rs`), `npm run build` exit 0, i18n **235/235**. **Não verificado:** nada visto na tela — nem as paletas, nem um livro com CSS de cor própria obedecendo ao tema, nem o destaque no Escuro.
+
 ### AD-072: A lateral fica com histórico, Biblioteca e Configurações; Runtime vira aba (2026-09-12)
 
 **Pedidos do usuário:** tirar o "ReadMe" de cima da lista de leituras; mover o Runtime da lateral para dentro de Configurações "separando tudo em abas"; e "no sidebar deve ficar só a Biblioteca e Configurações". Perguntado se o histórico saía também — **não**: ele continua na lateral, e "só" vale para a navegação.
@@ -1248,7 +1315,7 @@ O `/apply-template` do llama.cpp confirmou que o prompt em si estava bem formado
 **Trade-off:** Precisa resetar `activeView` para `'chat'` ao criar/selecionar um chat (senão o usuário fica preso na tela de Configurações vendo a lista mudar atrás). Feito em `ChatList.handleCreateChat/handleSelectChat`.
 **Impact:** Estabelece o padrão que Documentos e Conexões provavelmente vão seguir quando ganharem conteúdo real (M3/M5) — hoje eles continuam como blocos inline simples (placeholders), a decisão de convertê-los para nav+painel fica para quando tiverem campos de verdade.
 
-### AD-013: 4º tema, paleta creme/terracota — **renomeado para `terracotta` em 2026-07-26** (2026-07-24)
+### AD-013: ~~4º tema, paleta creme/terracota — **renomeado para `terracotta` em 2026-07-26**~~ — ⛔ **REVOGADA em 2026-09-12 pela AD-073** (Terracota migra para Sépia) (2026-07-24)
 
 > **Renomeado a pedido do usuário.** O id passou de `claude` para `terracotta` e os rótulos para "Terracotta"/"Terracota". A paleta é a mesma. Quem já tinha o tema antigo salvo (em `config.json` ou no `localStorage`) é migrado por `normalizeTheme`, e a config é regravada no primeiro boot para a migração não rodar de novo — descartar o id antigo teria parecido que o app esqueceu a escolha do usuário.
 

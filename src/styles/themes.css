@@ -1,56 +1,69 @@
+/* SPEC: settings-storage-i18n (CFG-05, CFG-09) */
 /*
   Semantic color tokens as CSS custom properties, switched at runtime via
   `data-theme` on <html>. Components reference these via Tailwind arbitrary
   values, e.g. `bg-[var(--bg-app)]`, so switching theme needs no re-render
   of Tailwind classes — only the CSS variables change.
+
+  Every preset keeps `--bg-app` and `--text-primary` as plain 6-digit hex: the
+  reader reads those two to paint the book's page (FID-14), and only a hex it
+  can validate goes into the iframe.
 */
 
+/* Black / dark gray background, white text. */
 :root,
 :root[data-theme="dark"] {
-  --bg-sidebar: #0f172a;
-  --bg-app: #1e293b;
-  --bg-elevated: #334155;
-  --border-color: #334155;
-  --text-primary: #f1f5f9;
-  --text-secondary: #94a3b8;
+  --bg-sidebar: #0a0a0a;
+  --bg-app: #121212;
+  --bg-elevated: #262626;
+  --border-color: #2e2e2e;
+  --text-primary: #f5f5f5;
+  --text-secondary: #a3a3a3;
   --accent: #6366f1;
   --accent-hover: #818cf8;
   --accent-fg: #ffffff;
 }
 
+/* White background, black text. */
 :root[data-theme="light"] {
-  --bg-sidebar: #f1f5f9;
+  --bg-sidebar: #f5f5f5;
   --bg-app: #ffffff;
-  --bg-elevated: #e2e8f0;
-  --border-color: #e2e8f0;
-  --text-primary: #0f172a;
-  --text-secondary: #64748b;
+  --bg-elevated: #e5e5e5;
+  --border-color: #e5e5e5;
+  --text-primary: #0a0a0a;
+  --text-secondary: #525252;
   --accent: #4f46e5;
   --accent-hover: #4338ca;
   --accent-fg: #ffffff;
 }
 
-:root[data-theme="ocean"] {
-  --bg-sidebar: #052e2b;
-  --bg-app: #0a3d38;
-  --bg-elevated: #0f544c;
-  --border-color: #14665c;
-  --text-primary: #e6fffa;
-  --text-secondary: #8fd9c4;
-  --accent: #14b8a6;
-  --accent-hover: #2dd4bf;
-  --accent-fg: #052e2b;
+/* Yellowed paper and brown ink: lower contrast than light, for long reading. */
+:root[data-theme="sepia"] {
+  --bg-sidebar: #ebe0c5;
+  --bg-app: #f4ecd8;
+  --bg-elevated: #e2d5b5;
+  --border-color: #d9cba6;
+  --text-primary: #5b4636;
+  --text-secondary: #8b7355;
+  --accent: #a0522d;
+  --accent-hover: #8b4513;
+  --accent-fg: #ffffff;
 }
 
-/* Warm cream palette built around a terracotta accent (#da7756). */
-:root[data-theme="terracotta"] {
-  --bg-sidebar: #ede9de;
-  --bg-app: #faf9f5;
-  --bg-elevated: #e3ddd0;
-  --border-color: #e3ddd0;
-  --text-primary: #3d3929;
-  --text-secondary: #83786a;
-  --accent: #da7756;
-  --accent-hover: #c25f3d;
-  --accent-fg: #ffffff;
+/*
+  The user picks three colors (CFG-09); `applyTheme` writes them inline on
+  <html> as --bg-app, --text-primary and --accent, which wins over the
+  defaults below. Everything else is mixed from those three, so a custom theme
+  never has a sidebar or a border the user did not effectively choose.
+*/
+:root[data-theme="custom"] {
+  --bg-app: #ffffff;
+  --text-primary: #0a0a0a;
+  --accent: #4f46e5;
+  --bg-sidebar: color-mix(in srgb, var(--bg-app) 94%, var(--text-primary));
+  --bg-elevated: color-mix(in srgb, var(--bg-app) 86%, var(--text-primary));
+  --border-color: color-mix(in srgb, var(--bg-app) 84%, var(--text-primary));
+  --text-secondary: color-mix(in srgb, var(--text-primary) 62%, var(--bg-app));
+  --accent-hover: color-mix(in srgb, var(--accent) 85%, var(--text-primary));
+  --accent-fg: var(--bg-app);
 }

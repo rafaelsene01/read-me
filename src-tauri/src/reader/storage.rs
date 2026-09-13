@@ -615,6 +615,27 @@ mod tests {
     }
 
     #[test]
+    fn a_book_with_more_than_9999_illustrations_writes_and_reads_them() {
+        // O caminho exato que falhou para o usuário: `write_images` passa cada
+        // nome por `image_file`, e a imagem 10.000 era recusada ali.
+        let lib = library("images-many");
+        let book = book_dir(&lib, "livro").unwrap();
+
+        write_images(
+            &book,
+            &[
+                illustration("9999.png", b"antes"),
+                illustration("10000.png", b"dez mil"),
+                illustration("26787.jpg", b"ultima"),
+            ],
+        )
+        .unwrap();
+
+        assert_eq!(read_image(&book, "10000.png").unwrap(), b"dez mil");
+        assert_eq!(read_image(&book, "26787.jpg").unwrap(), b"ultima");
+    }
+
+    #[test]
     fn an_empty_or_escaping_name_is_refused_instead_of_deleting_the_parent_folder() {
         // A linha mais perigosa desta feature é `remove_dir_all`. Um idioma
         // vazio faria `lang_dir` devolver a própria pasta do livro, e

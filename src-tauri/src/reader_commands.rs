@@ -2,7 +2,7 @@
 //       READ-17, READ-20, READ-21, READ-26, READ-27, READ-28, READ-29, READ-30),
 //       reading-history (HIST-02, HIST-04, HIST-05, HIST-06, HIST-07, HIST-09),
 //       book-illustrations (ILLUS-03, ILLUS-07, ILLUS-09, ILLUS-10),
-//       epub-fidelity (FID-01, FID-02, FID-03, FID-05, FID-09, FID-11, FID-12, FID-13),
+//       epub-fidelity (FID-01, FID-02, FID-03, FID-05, FID-09, FID-11, FID-12, FID-13, FID-15),
 //       book-library (LIB-13)
 
 //! Turning an imported book into pages on disk.
@@ -754,10 +754,17 @@ img{max-width:100%;height:auto}\
 p{margin:0 0 1em}";
 
 fn document(css: &str, page_html: &str, book_dir: &Path) -> String {
-    let body = inline_images(page_html, book_dir);
+    let inlined = inline_images(page_html, book_dir);
+    // A page written since FID-15 is already its chapter's `<body>` element,
+    // and wrapping it again would bury the chapter's class one level down,
+    // where `body.class8` stops matching. An older page is bare blocks.
+    let body = match html::page_body(page_html).0 {
+        Some(_) => inlined,
+        None => format!("<body>{inlined}</body>"),
+    };
     format!(
         "<!doctype html><html><head><meta charset=\"utf-8\">\
-         <style>{READER_CSS}</style><style>{css}</style></head><body>{body}</body></html>"
+         <style>{READER_CSS}</style><style>{css}</style></head>{body}</html>"
     )
 }
 

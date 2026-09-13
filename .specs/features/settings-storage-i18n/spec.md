@@ -68,9 +68,20 @@ Antes de baixar modelos ou indexar documentos, o app precisa saber **onde** guar
 **Acceptance Criteria**:
 
 1. WHEN o usuário seleciona um tema THEN a UI SHALL aplicar as cores imediatamente (CSS variables)
-2. WHEN há pelo menos 3 temas (claro, escuro e ao menos um extra) THEN todos SHALL estar selecionáveis
+2. ⚠️ **ALTERADO em 2026-09-12 (AD-073).** ~~WHEN há pelo menos 3 temas (claro, escuro e ao menos um extra) THEN todos SHALL estar selecionáveis~~ WHEN o usuário abre a escolha de tema THEN SHALL haver exatamente **Claro** (fundo branco, texto preto), **Escuro** (fundo preto/cinza-escuro, texto branco), **Sépia** (tons amarelados de baixo contraste) e **Personalizado** (CFG-09). Oceano e Terracota saíram; quem os tinha salvos cai em Escuro e Sépia, respectivamente, sem voltar ao padrão em silêncio
 3. WHEN o tema é alterado THEN a escolha SHALL persistir entre sessões
 4. WHEN o app abre THEN o tema persistido SHALL ser aplicado antes do primeiro render visível (sem flash)
+
+### P1: Tema personalizado (2026-09-12, CFG-09, AD-073)
+
+**User Story**: Como leitor, quero escolher eu mesmo as cores do app e da página, para ler do jeito que prefiro.
+
+**Acceptance Criteria**:
+
+1. WHEN o usuário escolhe "Personalizado" THEN o sistema SHALL oferecer três cores — fundo, texto e destaque — começando das cores do tema que estava na tela
+2. WHEN o usuário muda uma cor THEN a interface SHALL mudar na hora, e o resto da paleta (lateral, bordas, texto secundário) SHALL ser derivado das três
+3. WHEN o usuário volta a um tema pronto e depois ao Personalizado THEN as cores escolhidas SHALL voltar
+4. IF uma cor recebida não é `#rrggbb` THEN o sistema SHALL recusá-la antes de gravar e antes de escrevê-la em CSS
 
 **Independent Test**: Trocar entre claro/escuro/extra e ver a mudança na hora; reiniciar e manter.
 
@@ -125,10 +136,11 @@ Antes de baixar modelos ou indexar documentos, o app precisa saber **onde** guar
 | CFG-02 | P1: Estrutura de pastas + realocar .db | Implemented | Implemented |
 | CFG-03 | P1: Idioma EN padrão + PT (i18n) | Implemented | Implemented |
 | CFG-04 | P1: Fallback de tradução p/ EN | Implemented | Implemented |
-| CFG-05 | P1: Temas claro/escuro/extra (CSS vars) | Implemented | Implemented |
+| CFG-05 | P1: Temas ⚠️ **ALTERADO (AD-073)**: Claro/Escuro/Sépia/Personalizado (CSS vars); Oceano e Terracota migrados para Escuro e Sépia | Implemented | Implemented — paletas em `themes.css`, migração em `normalizeTheme` (`theme.ts`). **Sem teste** (sem suíte de frontend); `npm run build` exit 0. Não visto na tela |
 | CFG-06 | P1: Persistência de tema/idioma/pasta | Implemented | Implemented |
 | CFG-07 | P1: Wizard de 1º uso | Implemented | Implemented |
 | CFG-08 | P2: Seção Configurações na sidebar | Implemented | Implemented |
+| CFG-09 | P1: Tema personalizado com fundo, texto e destaque (AD-073) | Implemented | Implemented, NÃO MEDIDO — backend: `AppConfig.custom_theme` (`#[serde(default)]`), comando `update_custom_theme` com `config::is_hex_color`; units `a_config_written_before_the_custom_theme_still_deserializes` e `only_a_six_digit_hex_is_a_custom_color` (341/0/22). Frontend: `input type="color"` na aba Geral, gravação com atraso de 400 ms, derivação por `color-mix` em `themes.css` — **sem teste**, só `npm run build` exit 0. Nada foi clicado |
 
 **ID format:** `CFG-[NUMBER]`
 **Status values:** Pending → In Design → In Tasks → Implementing → Verified
